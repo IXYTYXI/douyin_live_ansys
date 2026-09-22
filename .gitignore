@@ -11,3 +11,6 @@ node_modules/
 *.wav
 *.mp3
 private-data/
+
+__pycache__/
+*.pyc
