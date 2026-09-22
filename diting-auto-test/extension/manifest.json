@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "【隔离测试】谛听百应采集",
+  "version": "0.5.9",
+  "version_name": "WR-P-009-AUTO-SETTINGS-TEST-20260922",
+  "description": "从已登录的百应页面汇总直播数据，并通过本机桥接程序提交飞书。",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA7GC0FoTcZbPJXE/35t9lNRVNbCOy2vBlqky9QmWZy/eKKiCcJVja2WUlI7tZumX30x9mkHywo050z21LrSwVsr0PxB13RoVjhvBVaS/Y/Z+f4c1y7bn3vFAQomHQX1k8v3DHecOobWxansPk1R64fDGuiLMsafbjm4ohqd8VySorhuXska2q334I2gFbCJee/6zRBKN5xRqkE20QcA/ltN9qI4N33WzXr5Adpo6/vhS3eTTlnY8TxPoWJLj75suZH+gXbNY6od9O1uqLbtCV2esBbD3jcLVPIu+S30SEpu85Wn2nIA3eYg+PeDGJzpjJ/Ai8PgLm/N4dHPCdKc3CxwIDAQAB",
+  "permissions": [
+    "activeTab",
+    "debugger",
+    "nativeMessaging",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://compass.jinritemai.com/*",
+    "https://holiday.dreace.top/*"
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "background": {
+    "service_worker": "dist/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://compass.jinritemai.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "「谛听」百应场控数据采集",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png"
+    },
+    "default_popup": "popup.html"
+  }
+}
