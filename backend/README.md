@@ -84,3 +84,26 @@ node --test tests/*.test.mjs review-demo/*.test.mjs
 - 同一任务重试持久复用同一音频 URL 和请求 ID，减少提交响应丢失后的重复任务风险。签名过期需人工处理；不会无提示更换 URL 重发同一 ID。
 
 失败的远端任务不代表已取消：本地释放名额无法保证公司侧任务已经结束。并发限制是本业务的准入控制，不能保证淘宝或其他团队完全不受共享 ASR 负载影响。没有调用远端取消接口，也不读取其他服务的队列。真实吞吐能力需要公司配额及联调数据确认。
+
+## 主播插件数据接收（PostgreSQL）
+
+独立服务，不初始化 ASR 的本地任务库，不创建 SQLite。数据库连接仅在服务器配置，插件只持有接口令牌。
+
+```sh
+python3 -m pip install -r backend/requirements.txt
+# 通过服务器的密钥管理/环境变量设置 METRICS_DATABASE_URL 和 METRICS_API_KEY。
+# METRICS_API_KEY 至少 24 字符；不要提交真实配置。
+python3 -m backend.metrics_service migrate
+python3 -m backend.metrics_service serve --host 127.0.0.1 --port 18773
+```
+
+迁移只新增 `diting_metrics` schema，包含 `samples`（逐条采样和接收时间）、`batches`（批次内容与幂等校验）。数据库账号须有对应权限。先在测试数据库执行，公网访问由 HTTPS 反向代理转到本服务。
+
+- `POST /api/metrics/batches`：Bearer `METRICS_API_KEY`，JSON `{schema:1,batchId,records}`，最多 300 条/2 MB。事务提交后返回 `{batchId,acceptedIds}`；相同记录重传不会重复入库；相同 ID 不同内容返回 409，整批回滚。数据库失败返回 503，插件保留原批次重试。
+- `GET /api/metrics?runId=...&after=0&limit=300`：同样鉴权，返回 `records,nextCursor`，按入库序号分页。runId 是采集批次，不能作为真实直播场次 ID。
+- 当前单个部署使用一个共享 API 令牌，适用于受控内部测试，不提供多租户隔离。批次写入使用事务锁串行处理以保证重传一致性和分页不会遗漏未提交记录。
+- 部署并取得 HTTPS 地址后，才设置插件 `INGEST_URL`、对应 host permission 和上传令牌；当前插件仍未连接公网接口。
+- 每 10 分钟分析和飞书同步不在此接收服务内。
+
+验证：`python3 -m unittest discover -s backend/tests -v`。
+PostgreSQL 集成测试仅在设置 `METRICS_TEST_DATABASE_URL` 后运行：**必须指向专用可清空的测试数据库**，测试会清空其中的 `diting_metrics.samples/batches`。未配置时明确跳过，不表示数据库联调通过。

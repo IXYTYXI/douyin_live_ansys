@@ -5,6 +5,8 @@ import json
 import mimetypes
 import re
 import time
+import psycopg
+from .metrics import MetricsStore, Conflict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlencode, urlsplit
 
@@ -30,9 +32,10 @@ class MediaSigner:
             return False
 
 
-def make_server(pipeline, signer, api_key, host='127.0.0.1', port=18772):
+def make_server(pipeline, signer, api_key, host='127.0.0.1', port=18772, metrics=None):
     if len(api_key) < 24:
         raise ValueError('REVIEW_API_KEY must contain at least 24 characters')
+
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_):
@@ -47,16 +50,56 @@ def make_server(pipeline, signer, api_key, host='127.0.0.1', port=18772):
             self.end_headers()
             self.wfile.write(data)
 
+        def do_POST(self):
+            if not hmac.compare_digest(self.headers.get('Authorization', ''), 'Bearer ' + api_key):
+                self.close_connection = True
+                return self.reply(401, {'error': 'unauthorized'})
+            if urlsplit(self.path).path != '/api/metrics/batches':
+                self.close_connection = True
+                return self.reply(404, {'error': 'not found'})
+            if metrics is None:
+                return self.reply(503, {'error': 'metrics storage not configured'})
+            try:
+                length = int(self.headers.get('Content-Length', '0'))
+                if self.headers.get('Transfer-Encoding') or not 0 < length <= 2_000_000:
+                    self.close_connection = True
+                    return self.reply(413, {'error': 'body must be 1 to 2000000 bytes'})
+                if self.headers.get('Content-Type', '').split(';')[0] != 'application/json':
+                    self.close_connection = True
+                    return self.reply(415, {'error': 'application/json required'})
+                self.connection.settimeout(15)
+                batch = json.loads(self.rfile.read(length))
+                ack = metrics.accept(batch)
+                return self.reply(200, ack)
+            except Conflict as error:
+                return self.reply(409, {'error': str(error)})
+            except (ValueError, UnicodeError):
+                return self.reply(400, {'error': 'invalid batch'})
+            except (psycopg.Error, OSError):
+                return self.reply(503, {'error': 'storage unavailable; retry same batch'})
+
         def do_GET(self):
             parsed = urlsplit(self.path)
             query = parse_qs(parsed.query)
             path = parsed.path
             if path == '/health':
                 return self.reply(200, {'ok': True})
-            if path.startswith('/media/'):
+            if path.startswith('/media/') and pipeline is not None:
                 return self.media(path[len('/media/'):], query)
             if not hmac.compare_digest(self.headers.get('Authorization', ''), 'Bearer ' + api_key):
                 return self.reply(401, {'error': 'unauthorized'})
+            if path == '/api/metrics':
+                if metrics is None:
+                    return self.reply(503, {'error': 'metrics storage not configured'})
+                try:
+                    return self.reply(200, metrics.read(query.get('runId', [''])[0],
+                        int(query.get('after', [0])[0]), int(query.get('limit', [300])[0])))
+                except ValueError:
+                    return self.reply(400, {'error': 'invalid query'})
+                except psycopg.Error:
+                    return self.reply(503, {'error': 'storage unavailable'})
+            if pipeline is None:
+                return self.reply(404, {'error': 'not found'})
             if not re.fullmatch(r'/api/sessions/[A-Za-z0-9_-]{1,100}', path):
                 return self.reply(404, {'error': 'not found'})
             try:
