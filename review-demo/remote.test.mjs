@@ -9,3 +9,9 @@ test('real ASR preview exposes only completed text without simulated metrics',()
  assert.equal(s.source,'backend-asr');assert.equal(s.duration,45);assert.equal(s.processing,true);
  assert.deepEqual(samples(s,0,45),[]);assert.equal(transcripts(s,0,45)[0].text,'真实识别结果');assert.equal(summary(s,0,45).theme,'');
 });
+test('combined test links prior metrics, real text and generated review by range',()=>{
+ const s=remoteSession({source:'asr-integration-test',id:'combined',combinedTest:true,startedAt:'2026-09-24T04:00:00Z',duration:1800,samples:[{t:0,value:90},{t:600,value:120}],segments:[{start:0,state:'done',text:'分数画图法应用题',utterances:[{start:.1,end:4,text:'分数画图法应用题'}]}]});
+ assert.equal(summary(s,0,600).theme,'分数讲解与课程演示');assert.ok(summary(s,0,600).keywords.includes('分数'));
+ assert.equal(summary(s,600,1200).theme,'本时段暂无转写');assert.match(summary(s,600,1200).body,/120/);
+ assert.equal(transcripts(s,600,1200).length,0);
+});
