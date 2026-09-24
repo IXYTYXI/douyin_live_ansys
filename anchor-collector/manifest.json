@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "谛听 · 抖音主播取数测试",
-  "version": "0.2.0",
-  "description": "仅从已打开的抖音主播大屏读取指标，每10秒本地暂存，可手动导出；不上传业务表。",
+  "version": "0.3.0",
+  "description": "每10秒采集主播指标，本地暂存，每5分钟批量上传到配置的后端。",
   "permissions": [
     "storage",
     "activeTab",
@@ -28,5 +28,9 @@
   ],
   "action": {
     "default_popup": "popup.html"
-  }
+  },
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://127.0.0.1/*"
+  ]
 }

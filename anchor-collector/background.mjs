@@ -1,5 +1,5 @@
 import {flush,UPLOAD_PERIOD_MINUTES} from './upload.mjs';
-import {INGEST_URL} from './upload-config.mjs';
+import {endpoint as validateEndpoint} from './endpoint.mjs';
 import {parseMetrics} from './parser.mjs';
 const CAP=5000;
 let pending=Promise.resolve();
@@ -11,6 +11,15 @@ chrome.runtime.onMessage.addListener((message,sender,reply)=>{
  const task=pending.then(async()=>{
   const {settings={},records=[]}=await chrome.storage.local.get(['settings','records']);
   if(message.type==='STATUS'){const {uploadStatus,lastUploadedAt}=await chrome.storage.local.get(['uploadStatus','lastUploadedAt']);return {settings,count:records.length,last:records.at(-1)||null,uploadStatus,lastUploadedAt};}
+  if(message.type==='CONFIGURE_UPLOAD'){
+   const ingestUrl=validateEndpoint(message.url);
+   if(!await chrome.permissions.contains({origins:[new URL(ingestUrl).origin+'/*']}))throw Error('尚未授权接收地址');
+   if(typeof message.token!=='string'||message.token.length<24)throw Error('上传令牌至少24字符');
+   const state=await chrome.storage.local.get(['ingestUrl','batch']);
+   if(state.batch&&state.ingestUrl!==ingestUrl)throw Error('先完成当前批次上传再更换地址');
+   await chrome.storage.local.set({ingestUrl,uploadToken:message.token,uploadStatus:'上传已配置，每5分钟发送'});return {};
+  }
+  if(message.type==='UPLOAD_NOW')return {};
   if(message.type==='EXPORT')return {schema:1,source:'anchor-visible-dashboard',records};
   if(message.type==='STOP'){settings.enabled=false;settings.status='已停止，本地记录保留';await chrome.storage.local.set({settings});return {settings};}
   if(message.type==='START'){
@@ -35,7 +44,7 @@ chrome.runtime.onMessage.addListener((message,sender,reply)=>{
   settings.lastAt=now;settings.status=message.visible?'正在取数 · 本地保存':'后台页面采样 · 可能受浏览器节流影响';
   await chrome.storage.local.set({settings,records});return {count:records.length};
  });
- pending=task.catch(()=>{});task.then(data=>{reply({ok:true,...data});if(message.type==='STOP')void upload(true);},e=>reply({ok:false,error:e.message}));return true;
+ pending=task.catch(()=>{});task.then(data=>{reply({ok:true,...data});if(['STOP','UPLOAD_NOW'].includes(message.type))void upload(true);},e=>reply({ok:false,error:e.message}));return true;
 });
 // Fail closed on browser restart: saved tab IDs are not safe account/session bindings.
 chrome.runtime.onStartup.addListener(()=>{const task=pending.then(async()=>{const {settings={}}=await chrome.storage.local.get('settings');settings.enabled=false;settings.status='浏览器已重启，请核对主播后重新开始';await chrome.storage.local.set({settings});});pending=task.catch(()=>{});});
@@ -48,10 +57,9 @@ let uploading=false;
 async function upload(force=false){
  if(uploading)return;uploading=true;
  try{
-  if(!INGEST_URL){await updateUpload(s=>{s.uploadStatus='尚未配置上传服务，数据仅保存在本机';});return;}
-  const endpoint=new URL(INGEST_URL);
-  if(endpoint.protocol!=='https:'||endpoint.username||endpoint.password)throw Error('HTTPS endpoint required');
-  const {uploadToken}=await chrome.storage.local.get('uploadToken');
+  const {ingestUrl,uploadToken}=await chrome.storage.local.get(['ingestUrl','uploadToken']);
+  if(!ingestUrl){await updateUpload(s=>{s.uploadStatus='尚未配置上传服务，数据仅保存在本机';});return;}
+  const endpoint=new URL(validateEndpoint(ingestUrl));
   if(!uploadToken)throw Error('Upload authorization required');
   await flush({update:updateUpload,force,post:async batch=>{
    const response=await fetch(endpoint.href,{method:'POST',redirect:'error',credentials:'omit',headers:{'Content-Type':'application/json','Authorization':'Bearer '+uploadToken},body:JSON.stringify(batch),signal:AbortSignal.timeout(15000)});

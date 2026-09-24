@@ -13,3 +13,15 @@ test('only popup can enable; other tabs cannot submit; samples deduplicate and e
  await call({type:'STOP'});await call(m,page);assert.equal((await call({type:'STATUS'})).count,1);
 });
 test('unknown account never emits samples',async()=>{saved={};await call({type:'START',teacher:'老师'});await call({type:'SAMPLE',header:'其他主播',metricText:'直播热度 在线人数 88 直播趋势图'},page);assert.equal((await call({type:'STATUS'})).count,0);});
+test('upload settings require popup and explicit destination permission',async()=>{
+ saved={};chrome.permissions={contains:async()=>false};
+ const message={type:'CONFIGURE_UPLOAD',url:'https://example.com/api/metrics/batches',token:'t'.repeat(32)};
+ assert.equal((await call(message,page)).ok,false);
+ assert.equal((await call(message)).ok,false);
+ chrome.permissions.contains=async()=>true;
+ assert.equal((await call(message)).ok,true);
+ assert.equal(saved.ingestUrl,message.url);
+ assert.equal('uploadToken' in await call({type:'STATUS'}),false);
+ saved.batch={batchId:'pending'};
+ assert.equal((await call({...message,url:'https://other.example/api/metrics/batches'})).ok,false);
+});
