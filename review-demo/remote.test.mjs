@@ -11,7 +11,7 @@ test('real ASR preview exposes only completed text without simulated metrics',()
 });
 test('combined test links prior metrics, real text and generated review by range',()=>{
  const s=remoteSession({source:'asr-integration-test',id:'combined',combinedTest:true,startedAt:'2026-09-24T04:00:00Z',duration:1800,samples:[{t:0,value:90},{t:600,value:120}],segments:[{start:0,state:'done',text:'分数画图法应用题',utterances:[{start:.1,end:4,text:'分数画图法应用题'}]}]});
- assert.equal(summary(s,0,600).theme,'分数讲解与课程演示');assert.ok(summary(s,0,600).keywords.includes('分数'));
- assert.equal(summary(s,600,1200).theme,'本时段暂无转写');assert.match(summary(s,600,1200).body,/120/);
- assert.equal(transcripts(s,600,1200).length,0);
+ assert.equal(summary(s,0,600).theme,'分数概念与课程演示');assert.ok(summary(s,0,600).keywords.includes('分数'));
+ assert.equal(summary(s,600,1200).theme,'画图法解应用题');assert.match(summary(s,600,1200).body,/120/);
+ assert.equal(transcripts(s,600,1200).length,20);assert.ok(transcripts(s,600,1200).every(r=>r.synthetic));assert.equal(summary(s,1200,1800).theme,'乘法练习与课堂回顾');
 });

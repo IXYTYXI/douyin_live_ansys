@@ -9,8 +9,8 @@ export function transcripts(session,start,end){if(['anchor-review','backend-test
 export function summary(session,a,b){if(session.combinedTest){
  const lines=transcripts(session,a,b),text=lines.map(r=>r.text).join(''),st=stats(samples(session,a,b));
  const keywords=['分数','画图法','应用题','预习','乘法','厘米','米'].filter(w=>text.includes(w));
- const theme=lines.length?(text.includes('分数')?'分数讲解与课程演示':'课程内容演示'):'本时段暂无转写';
- return {theme:limitTheme(theme),keywords,body:lines.length?`测试范围内有 ${lines.length} 段真实转写，涉及${keywords.join('、')}。模拟在线均值 ${st.average??'—'} 人，峰值 ${st.max??'—'} 人；两者非同场数据，不作因果判断。`:`本时段无真实转写；模拟在线均值 ${st.average??'—'} 人，峰值 ${st.max??'—'} 人。`,adjustment:lines.length?'测试建议：结合原音核对课程演示段落，再补充运营判断。':'本时段需补充音频后再分析。'};
+ const theme=lines.length?(lines.find(r=>r.topic)?.topic||(text.includes('分数')?'分数讲解与课程演示':'课程内容演示')):'本时段暂无转写';
+ return {theme:limitTheme(theme),keywords,body:lines.length?`测试范围内有 ${lines.filter(r=>!r.synthetic).length} 段真实转写、${lines.filter(r=>r.synthetic).length} 段模拟文字，涉及${keywords.join('、')}。模拟在线均值 ${st.average??'—'} 人，峰值 ${st.max??'—'} 人；两者非同场数据，不作因果判断。`:`本时段无真实转写；模拟在线均值 ${st.average??'—'} 人，峰值 ${st.max??'—'} 人。`,adjustment:lines.length?`测试建议：围绕“${limitTheme(theme)}”补充一道互动练习，记录前后人数变化；模拟建议需运营核实。`:'本时段需补充音频后再分析。'};
  }if(['anchor-review','backend-test','backend-asr'].includes(session.source))return {theme:'',keywords:[],body:''};const rows=samples(session,a,b),st=stats(rows),text=transcripts(session,a,b),names=[...new Set(text.map(t=>t.topic))];return {theme:periodTheme(session,text),keywords:session.id==='math'?'单位“1”、线段图、对应关系':'关键词、中心句、原文依据',body:`本时段围绕${names.join('、')}展开，通过讲解和提问推进练习。有效采样点均值 ${st.average??'未获取'} 人，采样最大值 ${st.max??'未获取'} 人。${st.missing?'存在采样缺失，需结合录像核对。':'可结合互动片段进一步复盘。'}人数变化仅作观察，不据此判断教学效果。`};}
 export function draftKey(id,a,b){return `${id}:${a}:${b}`;}
 
