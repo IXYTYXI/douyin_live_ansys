@@ -130,3 +130,19 @@ python3 -m backend serve --worker
 线上网页应通过同域、带用户鉴权的后端代理查询，由服务器注入 REVIEW_API_KEY；不能把共用密钥打包进网页。当前静态演示网页尚未接这个代理。插件 runId 与 ASR sessionId 不是同一概念，需明确关联后再按实际开播时间对齐人数曲线，不能按昵称猜测场次。本提交不包含 OBS 收流服务、用户登录代理、自动 AI 总结或线上网页部署。
 
 测试环境：设置 ASR_DATABASE_URL 指向专用测试 PostgreSQL，运行原有测试。每条 ASR 测试使用独立随机业务 schema；METRICS_TEST_DATABASE_URL 仍必须指向可清空的专用测试库。
+
+## 与 db/schema.sql 业务表衔接
+
+`db/schema.sql` 纳入版本管理，保留原有五张表。`metrics_service migrate` 先初始化收件表，再执行业务基线和增量迁移 `003_business_metrics.sql`；只新增字段/关联表，不删除既有电商字段或数据。
+
+接收服务现在使用 BusinessStore：未绑定 runId 的记录先保存在 `diting_metrics.samples`；绑定后在同一事务投影到 `diting.capture_snapshots` 和 `diting.online_samples`，提交后才返回确认。昵称不作为场次匹配依据。使用业务表中已确认的场次 ID：
+
+```sh
+python3 -m backend.metrics_service bind --run-id COLLECTOR_RUN_UUID --session-id EXISTING_BUSINESS_SESSION_ID
+```
+
+该命令回填已接收记录，重复执行去重；runId 不允许改绑另一场次，超出场次时间的记录拒绝整批入库。场次须事先有真实 live_room_id、started_at，不能以首次采样时间冒充开播时间。未绑定不会丢失数据，也不会创建虚假场次。
+
+实测字段：online/previewOnline/giftUsers/commentUsers/likes/shares/fanClubJoins/newFollowers 对应业务整数列；缺失保持 NULL，raw_payload 保留原始值与 approximate 标记。averageStay 只保存原始字符串和单位信息，单位未确认时不填 avg_stay_duration_seconds。is_stale 暂以采样 gap 标记，不能证明平台数值的新鲜程度。
+
+此变更只映射已实测的插件指标；ASR 到业务 transcript_lines 的场次关联、统一前端查询尚待接通。真实导出数据仅用于本地测试，不提交到公共仓库。

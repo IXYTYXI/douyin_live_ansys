@@ -78,6 +78,7 @@ class MetricsStore:
                     raise Conflict('record id reused with different content')
                 db.execute('INSERT INTO diting_metrics.samples(id,run_id,captured_at,payload) VALUES(%s,%s,%s,%s) ON CONFLICT(id) DO NOTHING',
                            (row['id'], row['runId'], row['capturedAt'], encoded))
+                self.project_record(db, row)
             db.execute('INSERT INTO diting_metrics.batches VALUES(%s,%s) ON CONFLICT(id) DO NOTHING', (batch['batchId'], payload))
         return {'batchId': batch['batchId'], 'acceptedIds': [row['id'] for row in records]}
 
@@ -88,3 +89,6 @@ class MetricsStore:
             rows = db.execute('SELECT seq,payload FROM diting_metrics.samples WHERE run_id=%s AND seq>%s ORDER BY seq LIMIT %s',
                               (run_id, after, limit)).fetchall()
         return {'records': [json.loads(row[1]) for row in rows], 'nextCursor': rows[-1][0] if rows else after}
+
+    def project_record(self, db, row):
+        pass  # Raw inbox remains usable independently.
