@@ -1,0 +1,4 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';
+import {flush} from '../anchor-collector/upload.mjs';
+test('keeps batch on failure and removes only acknowledged records after retry',async()=>{let state={records:[{id:'1'},{id:'2'}]};const update=async fn=>fn(state);let body;await flush({update,post:async b=>{body=b;throw Error('offline')},now:100});assert.equal(state.records.length,2);const first=body.batchId;state.records.push({id:'3'});await flush({update,post:async b=>{assert.equal(b.batchId,first);return {batchId:b.batchId,acceptedIds:['1']};},now:400000});assert.deepEqual(state.records.map(x=>x.id),['2','3']);});
+test('unrelated acknowledgment cannot delete queued records',async()=>{const state={records:[{id:'1'}]};await flush({update:async fn=>fn(state),post:async b=>({batchId:'wrong',acceptedIds:['1']}),now:100});assert.equal(state.records.length,1);});
