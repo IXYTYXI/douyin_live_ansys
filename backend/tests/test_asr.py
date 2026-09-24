@@ -41,3 +41,18 @@ class CompanyContractTest(unittest.TestCase):
             server.shutdown()
             server.server_close()
             thread.join()
+
+    def test_http_limits_are_classified_without_response_body(self):
+        import io
+        import urllib.error
+        from unittest.mock import Mock
+        from backend.asr import ASRError
+        for status,retryable in [(429,True),(503,True),(401,False),(400,False)]:
+            provider=CompanyASR('https://example.com')
+            provider.http=Mock()
+            provider.http.open.side_effect=urllib.error.HTTPError('https://example.com',status,'error',{'Retry-After':'90'},io.BytesIO(b'private upstream body'))
+            with self.assertRaises(ASRError) as caught:
+                provider.post('submit','id',{})
+            self.assertEqual(caught.exception.retryable,retryable)
+            self.assertNotIn('private',str(caught.exception))
+            if status in (429,503): self.assertEqual(caught.exception.retry_after,90)

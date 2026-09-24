@@ -26,7 +26,9 @@ def main():
     serve.add_argument('--port', type=int, default=18772)
     serve.add_argument('--worker', action='store_true', help='Enable real ASR calls; off by default')
     args = parser.parse_args()
-    pipeline = Pipeline(args.data)
+    pipeline = Pipeline(args.data, business=os.getenv('ASR_BUSINESS', 'douyin'),
+                        max_inflight=int(os.getenv('ASR_MAX_INFLIGHT', '2')),
+                        poll_seconds=float(os.getenv('ASR_POLL_SECONDS', '5')))
     if args.command == 'ingest':
         print(json.dumps({'recordingId': pipeline.ingest(args.session, args.started_at, args.recorded_at, args.file, args.chunk_seconds)}))
     elif args.command == 'review':
@@ -41,7 +43,8 @@ def main():
             if not os.getenv('PUBLIC_BASE_URL'):
                 parser.error('PUBLIC_BASE_URL must be reachable by the ASR server')
             provider = CompanyASR(os.getenv('COMPANY_ASR_URL', ''), os.getenv('COMPANY_ASR_HOST', ''),
-                                  os.getenv('COMPANY_ASR_UID', 'diting-test'), os.getenv('COMPANY_ASR_BEARER', ''))
+                                  os.getenv('COMPANY_ASR_UID', 'diting-douyin'), os.getenv('COMPANY_ASR_BEARER', ''),
+                                  requests_per_minute=float(os.getenv('ASR_REQUESTS_PER_MINUTE', '60')))
         server = make_server(pipeline, signer, os.getenv('REVIEW_API_KEY', ''), args.host, args.port)
         stop = threading.Event()
         def work():
