@@ -1,3 +1,5 @@
+import os
+import uuid
 import json
 import tempfile
 import threading
@@ -8,10 +10,11 @@ from backend.pipeline import Pipeline
 from backend.server import make_server, MediaSigner
 
 
+@unittest.skipUnless(os.getenv("ASR_DATABASE_URL"), "requires PostgreSQL test database")
 class HTTPTest(unittest.TestCase):
     def test_signed_media_and_review_auth(self):
         with tempfile.TemporaryDirectory() as folder:
-            pipeline = Pipeline(folder)
+            pipeline = Pipeline(folder, business='test_' + uuid.uuid4().hex)
             key = 'a' * 64 + '.wav'
             (Path(folder) / 'media' / key).write_bytes(b'0123456789')
             signer = MediaSigner('s' * 32, 'http://127.0.0.1')

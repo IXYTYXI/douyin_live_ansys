@@ -56,3 +56,12 @@ class CompanyContractTest(unittest.TestCase):
             self.assertEqual(caught.exception.retryable,retryable)
             self.assertNotIn('private',str(caught.exception))
             if status in (429,503): self.assertEqual(caught.exception.retry_after,90)
+
+    def test_documented_terminal_failure_does_not_retry(self):
+        from unittest.mock import Mock
+        from backend.asr import ASRError
+        provider = CompanyASR('https://example.com')
+        provider.post = Mock(return_value=('55000031', {}))
+        with self.assertRaises(ASRError) as caught:
+            provider.poll('test')
+        self.assertFalse(caught.exception.retryable)

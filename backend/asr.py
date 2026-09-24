@@ -70,14 +70,14 @@ class CompanyASR:
         code, _ = self.post('submit', task_id, {'user': {'uid': self.uid},
                             'audio': {'url': audio_url}, 'request': {'model_name': 'qwen3'}})
         if code != '20000000':
-            raise ASRError('ASR submit rejected', retryable=code.startswith('5'))
+            raise ASRError('ASR submit rejected', retryable=code.startswith('5') and code != '55000031')
 
     def poll(self, task_id):
         code, _ = self.post('query', task_id)
         if code in ('20000001', '20000002'):
             return None
         if code != '20000000':
-            raise ASRError('ASR query rejected', retryable=code.startswith('5'))
+            raise ASRError('ASR query rejected', retryable=code.startswith('5') and code != '55000031')
         code, data = self.post('result', task_id)
         result = data.get('result', {})
         if code not in ('', '20000000') or not isinstance(result, dict) or not isinstance(result.get('text'), str):

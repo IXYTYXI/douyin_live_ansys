@@ -26,7 +26,7 @@ class MetricsStore:
         self.dsn = dsn
 
     def connect(self):
-        return psycopg.connect(self.dsn, connect_timeout=10,
+        return psycopg.connect(self.dsn, client_encoding='utf8', connect_timeout=10,
                                options='-c statement_timeout=15000 -c lock_timeout=10000')
 
     def migrate(self):

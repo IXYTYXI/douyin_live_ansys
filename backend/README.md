@@ -1,6 +1,6 @@
 # 录制片段 → ASR → 复盘查询
 
-这是独立测试后端，Python 3.11+ 标准库 + FFmpeg，可在 Mac / Windows 运行。已实现文件处理与公司 ASR 接口适配；不是已上线的 OBS 推流服务，也尚未连接部署中的复盘 UI。
+这是独立测试后端，Python 3.11+、psycopg、PostgreSQL + FFmpeg，可在 Mac / Windows 运行。已实现文件处理与公司 ASR 接口适配；不是已上线的 OBS 推流服务，也尚未连接部署中的复盘 UI。
 
 ## 处理流
 
@@ -9,7 +9,7 @@ OBS / MediaMTX 完成一个录制片段
   → ingest(场次、真实开播时间、片段第一帧时间、文件)
   → 留存原文件 / FFmpeg 单声道 16kHz PCM16
   → 默认 45 秒音频块（与人数 10 秒采样独立）
-  → SQLite queued → submitted → done / failed
+  → PostgreSQL queued → submitted → done / failed
   → 公司 Qwen ASR submit → query → result
   → GET /api/sessions/{id}?start=0&end=1800
 ```
@@ -29,7 +29,7 @@ Windows 可把 `python3` 替换为 `python`，文件参数使用 Windows 路径�
 
 ## 2. 配置环境变量
 
-参考 `.env.example` 设置到运行环境（程序不自动加载 .env）。密钥至少 24 字符，自己生成，不要提交 Git。
+将以下变量设置到运行环境（程序不自动加载 .env）。密钥至少 24 字符，自己生成，不要提交 Git。
 
 - `REVIEW_API_KEY`：读取业务 API 的 Bearer 密钥。
 - `MEDIA_SIGNING_KEY`：签发限时音频/视频 URL 的独立密钥。
@@ -38,7 +38,8 @@ Windows 可把 `python3` 替换为 `python`，文件参数使用 Windows 路径�
 - `COMPANY_ASR_HOST`：可选虚拟 Host。
 - `COMPANY_ASR_UID`：测试用户标识。
 - `COMPANY_ASR_BEARER`：如网关需要 Bearer 认证才设置。
-- `DATA_DIR`：本地持久目录，默认 `private-data/asr`。
+- `ASR_DATABASE_URL`：PostgreSQL 连接串，必填；可与指标库共用数据库，使用独立业务 schema `diting_asr_douyin`。
+- `DATA_DIR`：音视频文件持久目录，默认 `private-data/asr`；数据库不保存视频二进制。所有 worker 必须访问同一媒体目录。
 
 先只启动查询服务，再显式启用真实 ASR：
 
@@ -53,9 +54,9 @@ API：`GET /api/sessions/test-001?start=120&end=720`，请求头 `Authorization:
 
 ## 重试与恢复
 
-任务与结果存 SQLite，重启可继续轮询已提交任务。每步异常指数退避，累计 5 次失败停止；24 小时未完成也停止。可执行 `python3 -m backend retry test-001` 重试失败任务。对于已过 24 小时的远端任务，需要运营核查远端状态，retry 不会重新创建远端任务。
+任务与结果存 PostgreSQL，重启可继续轮询已提交任务。每步异常指数退避，累计 5 次失败停止；24 小时未完成也停止。可执行 `python3 -m backend retry test-001` 重试失败任务。对于已过 24 小时的远端任务，需要运营核查远端状态，retry 不会重新创建远端任务。
 
-相同场次、片段起点和内容哈希重复导入不重复建任务。提交始终使用固定 X-Api-Request-Id；网络中断发生于提交成功但本地落库前时可能重发，依赖上游同 ID 幂等语义，未真实验证，不能宣称 exactly-once。锁租约 180 秒，单个 HTTP 请求 30 秒超时。媒体暂不自动删除，须规划保留期限与磁盘容量。原文件与提取音频时长可能存在偏差，生产需结合源流时间校准。
+相同场次、片段起点和内容哈希重复导入不重复建任务。新任务使用确定性 UUID 作为 X-Api-Request-Id；迁移的旧任务保留原远端 ID。网络中断发生于提交成功但本地落库前时可能重发，依赖上游同 ID 幂等语义，未真实验证，不能宣称 exactly-once。锁租约 180 秒，单个 HTTP 请求 30 秒超时。媒体暂不自动删除，须规划保留期限与磁盘容量。原文件与提取音频时长可能存在偏差，生产需结合源流时间校准。
 
 ## 验证
 
@@ -74,7 +75,7 @@ node --test tests/*.test.mjs review-demo/*.test.mjs
 
 淘宝和抖音是不同音频，分别转写。此后端只管理抖音本地队列，不修改淘宝服务，不控制公司其他调用方。
 
-- `ASR_BUSINESS=douyin`：新录制任务哈希包含业务标识；数据库绑定该标识，禁止把同一目录改为淘宝用途。已有任务保持原 ID，不导致重复提交。不同业务必须使用不同 DATA_DIR。
+- `ASR_BUSINESS=douyin`：新录制任务哈希包含业务标识；每个业务使用独立 PostgreSQL schema；首次连接自动建表，需要对应建表权限。不同业务必须使用不同 DATA_DIR。
 - `COMPANY_ASR_UID`：CLI 默认 `diting-douyin`，仅作请求业务标识，不是权限或额度隔离机制；公司如何使用 uid 需按其规范确认。
 - `ASR_MAX_INFLIGHT=2`：限制本队列已提交或待确认重试的任务，优先轮询已有任务再补新任务。它不是公司的总并发上限。
 - `ASR_REQUESTS_PER_MINUTE=60`：单个服务进程内平滑限制所有 submit/query/result HTTP 请求，含轮询。支持 6–6000。当前部署方式是单个 worker 进程；多实例时该 HTTP 限速不共享，不能把它当集群总额度。
@@ -107,3 +108,25 @@ python3 -m backend.metrics_service serve --host 127.0.0.1 --port 18773
 
 验证：`python3 -m unittest discover -s backend/tests -v`。
 PostgreSQL 集成测试仅在设置 `METRICS_TEST_DATABASE_URL` 后运行：**必须指向专用可清空的测试数据库**，测试会清空其中的 `diting_metrics.samples/batches`。未配置时明确跳过，不表示数据库联调通过。
+
+
+## ASR PostgreSQL 升级与前端接入
+
+此版本 ASR 队列、场次、片段及转写文字全部写 PostgreSQL；仅一次性迁移工具读取旧 SQLite。全新部署只需设置 ASR_DATABASE_URL，无需迁移旧文件。
+
+已有旧数据时：先停止旧、新 worker，备份旧目录，并让 DATA_DIR 指向原媒体目录（跨机器时完整复制 media/）。目标业务 schema 必须没有场次，避免覆盖或模糊合并。
+
+```sh
+python3 -m pip install -r backend/requirements.txt
+# 服务器环境中设置 ASR_DATABASE_URL，不要将密码提交到 Git。
+python3 -m backend.migrate_sqlite /path/to/old/pipeline.sqlite --data /path/to/media-root --business douyin
+python3 -m backend serve --worker
+```
+
+迁移为单事务，失败回滚；旧数据库只读不修改。完成后核对迁移行数与媒体文件。旧队列已提交的任务继续用原 task_id 轮询；新任务按公司文档使用 UUID。公司失败码 55000031 终止任务，不重复轮询。采用 query/result 轮询，无需配置 callback 白名单。公司文档未明确 utterances 时间单位，本版仍按音频块输出时间，不猜测逐字时间。
+
+前端对接：在用户选择场次或时间段时，请求 `GET /api/sessions/{id}?start=0&end=1800`；处理中可每 10 秒刷新，离开页面停止。返回 segments 的 state/text/start/end，以及 recordings 的 start/duration/url；done 才展示转写，缺失与失败不填假内容。视频定位为直播相对秒减 recording.start，仅在该录像覆盖范围内跳转。
+
+线上网页应通过同域、带用户鉴权的后端代理查询，由服务器注入 REVIEW_API_KEY；不能把共用密钥打包进网页。当前静态演示网页尚未接这个代理。插件 runId 与 ASR sessionId 不是同一概念，需明确关联后再按实际开播时间对齐人数曲线，不能按昵称猜测场次。本提交不包含 OBS 收流服务、用户登录代理、自动 AI 总结或线上网页部署。
+
+测试环境：设置 ASR_DATABASE_URL 指向专用测试 PostgreSQL，运行原有测试。每条 ASR 测试使用独立随机业务 schema；METRICS_TEST_DATABASE_URL 仍必须指向可清空的专用测试库。
