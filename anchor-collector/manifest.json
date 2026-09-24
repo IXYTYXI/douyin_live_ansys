@@ -1,0 +1,11 @@
+{
+ "manifest_version":3,
+ "name":"谛听 · 抖音主播取数测试",
+ "version":"0.1.0",
+ "description":"仅从已打开的抖音主播大屏读取指标，每10秒本地暂存，可手动导出；不上传业务表。",
+ "permissions":["storage","activeTab"],
+ "host_permissions":["https://anchor.douyin.com/*"],
+ "background":{"service_worker":"background.mjs","type":"module"},
+ "content_scripts":[{"matches":["https://anchor.douyin.com/*"],"js":["content.js"],"run_at":"document_idle"}],
+ "action":{"default_popup":"popup.html"}
+}
