@@ -82,4 +82,4 @@ class CompanyASR:
         result = data.get('result', {})
         if code not in ('', '20000000') or not isinstance(result, dict) or not isinstance(result.get('text'), str):
             raise ValueError('ASR result is invalid')
-        return result['text']
+        return {'text':result['text'], 'utterances':result.get('utterances', []), 'audio_info':data.get('audio_info', {})}

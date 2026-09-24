@@ -46,6 +46,7 @@ class Pipeline:
         with self.db(initialize=True) as db:
             db.execute((Path(__file__).parent / 'migrations/002_asr.sql').read_text())
             db.execute('ALTER TABLE segments ADD COLUMN IF NOT EXISTS task_id TEXT')
+            db.execute('ALTER TABLE segments ADD COLUMN IF NOT EXISTS utterances JSONB')
             db.execute("INSERT INTO settings VALUES ('business',%s) ON CONFLICT DO NOTHING", (business,))
             if db.execute("SELECT value FROM settings WHERE key='business'").fetchone()['value'] != business:
                 raise ValueError('business namespace differs')
@@ -127,6 +128,7 @@ class Pipeline:
             stable_url = row['audio_url'] or audio_url(row['audio'])
             db.execute('UPDATE segments SET owner=%s,lease=%s,audio_url=%s WHERE id=%s', (owner, now + 180, stable_url, row['id']))
         state, text, attempts, error = row['state'], row['text'], row['attempts'], None
+        utterances = row['utterances']
         submitted_at = row['submitted_at']
         task_id = row['task_id'] or str(uuid.uuid5(uuid.NAMESPACE_URL, self.business + ':' + row['id']))
         delay = self.poll_seconds
@@ -140,7 +142,11 @@ class Pipeline:
                 if now - submitted_at > 86400:
                     state, error = 'failed', 'ASR task exceeded 24 hours'
                 else:
-                    text = provider.poll(task_id)
+                    result = provider.poll(task_id)
+                    text = result
+                    if isinstance(result, dict):
+                        text = result.get('text')
+                        utterances = normalize_utterances(result, row['end']-row['start'])
                     if text is not None:
                         if not isinstance(text, str):
                             raise ValueError('ASR result.text must be a string')
@@ -161,8 +167,8 @@ class Pipeline:
         with self.db() as db:
             if cooldown_until:
                 db.execute("INSERT INTO settings VALUES ('cooldown',%s) ON CONFLICT(key) DO UPDATE SET value=GREATEST(CAST(settings.value AS DOUBLE PRECISION),CAST(excluded.value AS DOUBLE PRECISION))::text", (str(cooldown_until),))
-            db.execute('UPDATE segments SET state=%s,text=%s,attempts=%s,next_at=%s,submitted_at=%s,error=%s,owner=NULL,lease=0 WHERE id=%s AND owner=%s',
-                       (state, text, attempts, now + delay, submitted_at, error, row['id'], owner))
+            db.execute('UPDATE segments SET state=%s,text=%s,utterances=%s::jsonb,attempts=%s,next_at=%s,submitted_at=%s,error=%s,owner=NULL,lease=0 WHERE id=%s AND owner=%s',
+                       (state, text, json.dumps(utterances), attempts, now + delay, submitted_at, error, row['id'], owner))
         return True
 
     def retry(self, session_id):
@@ -176,8 +182,29 @@ class Pipeline:
             session = db.execute('SELECT * FROM sessions WHERE id=%s', (session_id,)).fetchone()
             if session is None:
                 raise KeyError(session_id)
-            rows = db.execute('SELECT id,recording_id,start,"end",state,text,attempts,error FROM segments WHERE session_id=%s AND start<%s AND "end">%s ORDER BY start', (session_id, end, start)).fetchall()
+            rows = db.execute('SELECT id,recording_id,start,"end",state,text,utterances,attempts,error FROM segments WHERE session_id=%s AND start<%s AND "end">%s ORDER BY start', (session_id, end, start)).fetchall()
             recordings = db.execute('SELECT id,start,duration,media FROM recordings WHERE session_id=%s ORDER BY start', (session_id,)).fetchall()
         return {'sessionId': session_id, 'startedAtUnix': session['started'], 'timeUnit': 'seconds',
-                'segments': [dict(r, timing='chunk') for r in rows],
+                'segments': [dict(r, timing='utterance' if r['utterances'] else 'chunk') for r in rows],
                 'recordings': [dict(r) for r in recordings]}
+
+
+def normalize_utterances(result, duration):
+    """Validate observed company millisecond timestamps against known audio duration."""
+    info = result.get('audio_info') or {}
+    reported = info.get('duration')
+    if type(reported) not in (int, float) or not math.isfinite(reported) or abs(reported/1000-duration)>1:
+        return []
+    output=[]
+    previous=-1
+    items=result.get('utterances')
+    if not isinstance(items,list): return []
+    for item in items:
+        if not isinstance(item,dict): return []
+        start,end=item.get('start_time'),item.get('end_time')
+        if any(type(v) not in (int,float) or not math.isfinite(v) for v in (start,end)): return []
+        if start<0 or end<=start or end>duration*1000+100 or start<previous: return []
+        if not isinstance(item.get('text'),str): return []
+        output.append({'start':start/1000,'end':min(duration,end/1000),'text':item['text'],'speaker':item.get('speaker') if isinstance(item.get('speaker'),str) else None})
+        previous=start
+    return output

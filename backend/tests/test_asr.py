@@ -33,7 +33,7 @@ class CompanyContractTest(unittest.TestCase):
         try:
             provider = CompanyASR('http://127.0.0.1:' + str(server.server_port))
             provider.submit('stable-id', 'https://example.com/signed.wav')
-            self.assertEqual(provider.poll('stable-id'), '实际接口契约测试')
+            self.assertEqual(provider.poll('stable-id')['text'], '实际接口契约测试')
             self.assertEqual([p[0] for p in observed], ['/asr/v1/qwen3/submit', '/asr/v1/qwen3/query', '/asr/v1/qwen3/result'])
             self.assertTrue(all(p[1] == 'stable-id' for p in observed))
             self.assertEqual(observed[0][2]['audio']['url'], 'https://example.com/signed.wav')
