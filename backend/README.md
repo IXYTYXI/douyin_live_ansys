@@ -158,3 +158,13 @@ METRICS_TEST_DATABASE_URL=postgresql://... python3 -m backend.demo_forward
 该脚本仅监听 127.0.0.1:18773，创建带 synthetic 前缀的独立模拟场次，生成 30 分钟/180 条十秒采样，调用插件共用的 flush 上传函数，通过鉴权 HTTP 接口入库并等待确认。然后浏览 `http://127.0.0.1:18773/?test=1`，前端通过 `/api/test/session` 从 PostgreSQL 读取曲线，每十秒刷新。无真实文字、视频或 AI 总结；不调用公司 ASR。临时上传密钥只在进程内生成，前端不含密钥。
 
 这是本机联调工具，未安装 Chrome 扩展即可验证共用上传逻辑；不等同于 Chrome 后台定时器/权限弹窗端到端验证。测试读取接口仅提供本次生成的模拟场次，禁止将该无登录预览服务改为公网监听。线上域名仍需正式用户鉴权代理。
+
+## 本地真实 ASR 结果预览
+
+已有测试场次提交到公司 ASR 后，可在相同 `ASR_DATABASE_URL` 上启动只监听本机的预览：
+
+```sh
+python3 -m backend.asr_preview --data /path/to/test-media --business douyin_asr_check --session TEST_SESSION
+```
+
+浏览 `http://127.0.0.1:18774/?test=1`，每十秒从 PostgreSQL 查询所选场次，只展示 done 片段的真实文字；未关联人数时不产生模拟曲线，不生成 AI 总结。此预览不提供公网认证，仅用于本机联调，不能当作生产部署。
