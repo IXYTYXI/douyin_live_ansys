@@ -27,7 +27,7 @@ class LiveTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             inbox=Path(root);folder=inbox/'9cc2845a-2307-43da-a4c3-48da19097548';folder.mkdir()
             source=folder/'1791420000-123456.mp4';source.write_bytes(b'completed video')
-            pipeline=Mock();store=Mock();store.register.return_value=1791420000.123456
+            pipeline=Mock();pipeline.review.return_value={'recordings':[]};store=Mock();store.register.return_value=1791420000.123456
             scan(pipeline,store,inbox);pipeline.ingest.assert_not_called()
             ready=source.with_suffix('.ready');ready.write_text(json.dumps({'path':str(source)}))
             pipeline.ingest.side_effect=RuntimeError('temporary failure')
@@ -36,3 +36,9 @@ class LiveTests(unittest.TestCase):
             scan(pipeline,store,inbox);self.assertFalse(source.exists());self.assertTrue(source.with_suffix('.done').exists())
             self.assertEqual(pipeline.ingest.call_count,2)
             scan(pipeline,store,inbox);self.assertEqual(pipeline.ingest.call_count,2)
+
+    def test_continuation_uses_media_duration_without_hiding_real_gap(self):
+        from backend.live import continuation_offset
+        self.assertEqual(continuation_offset(59.97,61.84),61.84)
+        self.assertEqual(continuation_offset(62.2,61.84),61.84)
+        self.assertEqual(continuation_offset(70,61.84),70)

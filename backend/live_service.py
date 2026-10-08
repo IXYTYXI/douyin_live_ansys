@@ -4,7 +4,7 @@ from pathlib import Path
 from datetime import datetime,timezone
 from urllib.parse import urlsplit
 from .asr import CompanyASR
-from .live import LiveStore,valid_publish,segment_stamp
+from .live import LiveStore,valid_publish,segment_stamp,continuation_offset
 from .pipeline import Pipeline
 from .server import MediaSigner,make_server
 
@@ -20,13 +20,22 @@ def scan(pipeline,store,inbox):
         if source.is_file():source.unlink()
     for ready in sorted(inbox.glob('*/*.ready')):
         try:
-            source=Path(json.loads(ready.read_text())['path']).resolve(strict=True)
+            event=json.loads(ready.read_text())
+            source=Path(event['path']).resolve(strict=True)
             if source.parent!=ready.parent or source.stem!=ready.stem:raise ValueError('invalid inbox event')
+            if any(p.name<source.name for p in source.parent.glob('*.mp4')):continue
             run=ready.parent.name;stamp=segment_stamp(source.name)
             # Earlier files exist even if their completion hook is delayed. Done markers preserve the origin.
             stamps=[segment_stamp(p.with_suffix('.mp4').name) for p in source.parent.iterdir() if p.suffix in ('.mp4','.ready','.done')]
             start=store.register(run,min(stamps))
-            pipeline.ingest('live-'+run,iso(start),iso(stamp),source,45)
+            if 'recordedAt' not in event:
+                try:previous=pipeline.review('live-'+run)['recordings']
+                except KeyError:previous=[]
+                previous_end=max((r['start']+r['duration'] for r in previous),default=0)
+                offset=continuation_offset(stamp-start,previous_end) if previous else stamp-start
+                event['recordedAt']=iso(start+offset)
+                temporary=ready.with_suffix('.pending');temporary.write_text(json.dumps(event));temporary.replace(ready)
+            pipeline.ingest('live-'+run,iso(start),event['recordedAt'],source,45)
             ready.rename(ready.with_suffix('.done'))
             # Pipeline has an immutable hashed copy before the temporary input is removed.
             source.unlink()

@@ -60,3 +60,9 @@ class LiveStore(MetricsStore):
         with self.connect() as db:
             rows=db.execute('SELECT id,run_id,teacher,started,live FROM diting_live.sessions ORDER BY started DESC').fetchall()
         return [dict(zip(('id','runId','teacher','started','live'),r)) for r in rows]
+
+
+def continuation_offset(wall_offset, previous_end):
+    # A sender may buffer packets before publication. Subsequent filenames use wall time,
+    # while finalized segments describe media time; do not overlap consecutive media.
+    return previous_end if wall_offset<=previous_end+1 else wall_offset
