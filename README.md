@@ -49,3 +49,21 @@ node --test tests/*.test.mjs review-demo/*.test.mjs
 脚本沿用已有独立数据库 `diting_plugin_test_20261008`，增加 `diting-ingest.service`
 （仅监听127.0.0.1:18777）和Nginx精确上传路由。重复部署保留上传凭证；配置仅存于
 root可读的 `/etc/diting-ingest.env`。此入口只保存原始采样，不猜测与旧录像的场次关联。
+
+### OBS 推流与正式场次
+
+打开 `https://live-ansys.ai.lab.yc345.tv/live-setup`（使用复盘网页登录）。
+先在插件开始采集并「立即上传」，再选择对应主播和时间的采集批次，获取 OBS 自定义服务器与推流密钥。
+使用 H.264/AAC、2秒关键帧间隔；核对画面后手动开始 OBS 直播。每次插件重新开始采集会生成新批次，需要重新获取对应推流配置；同一密钥断线重连归入同场。
+
+服务器接收 RTMPS 1936，约60秒完成一个录像片段，再分45秒音频提交公司ASR（独立队列，并发1、每分钟至多30次请求）。
+网页通过 `/api/sessions` 和 `/api/sessions/:id` 查看不同场次，每10秒刷新已完成数据；视频分段连续播放。
+直播期间分析完整10分钟窗口，停播后补尾段；分析会等待相应人数上传和转写完成。断流与未知人数不会补造。
+推流场次以服务器首段接收时刻为零点，并非抖音平台实际开播时刻。
+
+部署入口为 `.venv-review/bin/python backend/deploy/install_live.py`，支持传入官方归档路径（仍校验固定SHA256）。
+`diting-stream.service` 只接收和录制，`diting-live.service` 处理音频与公司ASR；凭证不进入Git。
+原始音频仅通过时效签名的 `/asr-audio/media/...wav` 提供给ASR，复盘录像仍需网页登录。
+录像暂未自动删除，请按实际直播时长规划磁盘留存。异常断电留下的未完成录像会保留，需核验后恢复。
+
+实现参考：[MediaMTX OBS 接入](https://mediamtx.org/docs/publish/obs-studio)、[录制钩子](https://mediamtx.org/docs/features/hooks)。
