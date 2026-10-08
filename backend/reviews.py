@@ -3,14 +3,14 @@ import json
 from .metrics import MetricsStore, Conflict
 
 
-def validate_fields(fields):
+def validate_fields(fields, *, keyword_limit=30):
     if not isinstance(fields,dict) or set(fields)-{'periodTheme','keywords','conclusion','adjustment'}:
         raise ValueError('invalid fields')
     for name,limit in [('periodTheme',16),('conclusion',8000),('adjustment',8000)]:
         value=fields.get(name,'')
         if not isinstance(value,str) or len(value)>limit:raise ValueError('invalid '+name)
     tags=fields.get('keywords',[])
-    if not isinstance(tags,list) or len(tags)>30 or any(not isinstance(t,str) or not 0<len(t)<=50 for t in tags):
+    if not isinstance(tags,list) or len(tags)>keyword_limit or any(not isinstance(t,str) or not 0<len(t)<=50 for t in tags):
         raise ValueError('invalid keywords')
     return fields
 

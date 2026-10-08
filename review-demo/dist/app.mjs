@@ -1,3 +1,4 @@
+import {noteFields} from './save-fields.mjs';
 import {printReview} from './print.mjs';
 import {loadTestSession,loadSession,loadSessions,recordingAt,nextRecording} from './remote.mjs';
 import {anchorSession} from './anchor-fixture.mjs';
@@ -80,7 +81,7 @@ setInterval(syncTestAudio,300);syncTestAudio();
 async function saveDatabase(){
  persist();const [a,b]=bounds(),s=session();
  const ranges=[{scope:'range',start:a,end:b,k:key()}];if(scope==='session')ranges.push({scope:'session',start:0,end:s.duration,k:noteKey()});
- const records=ranges.map(r=>{const d=drafts[r.k]||{};return {scope:r.scope,start:r.start,end:r.end,version:d.version||0,fields:{periodTheme:d.periodTheme??$('theme').value,keywords:d.keywords??tagValues.keywords,conclusion:d.conclusion??(r.k===noteKey()?$('conclusion').value:''),adjustment:d.adjustment??(r.k===noteKey()?$('adjustment').value:'')}};});
+ const records=ranges.map(r=>{const d=drafts[r.k]||{};return {scope:r.scope,start:r.start,end:r.end,version:d.version||0,fields:noteFields(r.scope,d,{periodTheme:$('theme').value,keywords:tagValues.keywords,conclusion:r.k===noteKey()?$('conclusion').value:'',adjustment:r.k===noteKey()?$('adjustment').value:''})};});
  const snapshots=ranges.map(r=>JSON.stringify(drafts[r.k]));$('save').disabled=true;$('save-status').textContent='正在保存到数据库…';
  try{const response=await fetch('/api/reviews',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:s.sessionId,records})});const result=await response.json();
  if(response.status===409){

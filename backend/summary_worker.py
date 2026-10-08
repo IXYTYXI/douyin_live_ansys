@@ -18,7 +18,7 @@ def generate(payload):
     if text.startswith('```'):text=text.split('\n',1)[1].rsplit('```',1)[0].strip()
     fields=json.loads(text)
     if set(fields)!={'periodTheme','keywords','conclusion','adjustment'}:raise ValueError('invalid summary fields')
-    return validate_fields(fields)
+    return validate_fields(fields,keyword_limit=12)
 
 
 def cycle(store,session,get_data):
