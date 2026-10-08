@@ -63,7 +63,7 @@ async function upload(force=false){
   if(!uploadToken)throw Error('Upload authorization required');
   await flush({update:updateUpload,force,post:async batch=>{
    const response=await fetch(endpoint.href,{method:'POST',redirect:'error',credentials:'omit',headers:{'Content-Type':'application/json','Authorization':'Bearer '+uploadToken},body:JSON.stringify(batch),signal:AbortSignal.timeout(15000)});
-   if(!response.ok)throw Error('Upload failed');return response.json();
+   if(!response.ok){const error=Error('Upload failed');error.status=response.status;throw error;}return response.json();
   }});
  }catch{await updateUpload(s=>{s.uploadStatus='上传配置或授权不可用，本机数据保留';});}
  finally{uploading=false;}

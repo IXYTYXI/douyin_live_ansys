@@ -8,6 +8,7 @@ from .metrics import Conflict
 from .reviews import ReviewStore
 from .live import LiveStore,stream_password
 from .summary_worker import cycle
+from .collection_status import collection_status,processing_status
 from .server import make_server,MediaSigner
 
 
@@ -59,6 +60,7 @@ def main():
             path=urlsplit(self.path).path
             if not self.authenticated():return self.reply(401,{'error':'authentication required'})
             try:
+                if path=='/api/collection-status':return self.reply(200,collection_status(store))
                 if path=='/api/live/channels':return self.reply(200,{'channels':store.channels()})
                 if path=='/api/live/runs':return self.reply(200,{'runs':store.runs()})
                 if path.startswith('/api/live/setup/'):
@@ -77,6 +79,7 @@ def main():
                     data=review_data(session)
                     return self.reply(200,{**data,'source':'live-review' if session.startswith('live-') else 'asr-integration-test','realRecording':True,
                         'startedAt':datetime.fromtimestamp(data['startedAtUnix'],timezone.utc).isoformat(),
+                        'collectionStatus':{'count':len(data['samples']),'binding':'teacher-time' if data.get('channelId') else 'run-id','teacher':data['teacher'],**processing_status(data,reviews.summaries(session))},
                         'databaseReviews':True,'notes':reviews.read_notes(session),'summaries':reviews.summaries(session),
                         'summaryConfigured':all(os.environ.get(k) for k in ('SUMMARY_BASE_URL','SUMMARY_MODEL','SUMMARY_API_KEY')),
                         'recordings':[{**r,'url':signer.url(r['media'],ttl=3600)} for r in data['recordings']]})

@@ -3,7 +3,7 @@ export function remoteSession(data){
  const liveSource=data.source==='live-review',asr=liveSource||data.source==='asr-integration-test';
  const d=new Date(data.startedAt);
  if(!Number.isFinite(d.getTime()))throw Error('无效的场次时间');
- const session={id:liveSource?data.id:'backend-test-'+data.id+(data.combinedTest?'-combined-v2':''),sessionId:data.id,live:data.live===true,teacher:data.realRecording?data.teacher:asr?'淘宝录音样本':'联调测试主播',course:liveSource?'直播回放':asr?'公司ASR真实转写测试':'模拟上传数据',source:liveSource?'live-review':asr?'backend-asr':'backend-test',
+ const session={collectionStatus:data.collectionStatus,id:liveSource?data.id:'backend-test-'+data.id+(data.combinedTest?'-combined-v2':''),sessionId:data.id,live:data.live===true,teacher:data.realRecording?data.teacher:asr?'淘宝录音样本':'联调测试主播',course:liveSource?'直播回放':asr?'公司ASR真实转写测试':'模拟上传数据',source:liveSource?'live-review':asr?'backend-asr':'backend-test',
  start:d.getHours()*60+d.getMinutes(),startSecond:d.getSeconds(),date:d.toLocaleDateString('zh-CN'),duration:asr?Math.max(1,data.duration):1800,
  onlineSamples:data.samples.map(r=>({t:r.t,value:r.value})),transcriptLines:asr?(data.segments||[]).filter(r=>r.state==='done').flatMap(r=>r.utterances?.length?r.utterances.map(u=>({t:r.start+u.start,end:r.start+u.end,text:u.text,speaker:u.speaker})): [{t:r.start,text:r.text}]):[],databaseReviews:data.databaseReviews===true,notes:data.notes||[],summaries:data.summaries||[],summaryConfigured:data.summaryConfigured===true,realRecording:data.realRecording===true,combinedTest:data.combinedTest===true&&!data.realRecording,recordings:data.recordings||[],processing:asr?(data.segments||[]).some(r=>r.state!=='done'):false};
  if(session.combinedTest){

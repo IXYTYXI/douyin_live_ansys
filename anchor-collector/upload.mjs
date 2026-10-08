@@ -19,7 +19,8 @@ export async function flush({update,post,now=Date.now(),force=false}){
    state.records=(state.records||[]).filter(r=>!accepted.has(r.id));
    state.batch=null;state.retryAt=0;state.uploadStatus='已确认上传 '+accepted.size+' 条';state.lastUploadedAt=now;
   });
- }catch{
-  await update(state=>{state.retryAt=now+300000;state.uploadStatus='上传未确认，保留原批次，5分钟后重试';});
+ }catch(error){
+  const reason=({400:'数据格式被拒绝',401:'上传凭证无效',403:'上传权限不足',409:'批次或记录ID冲突',413:'上传批次过大',429:'服务限流',500:'接收服务异常',502:'接收服务不可用',503:'接收服务暂不可用'})[error?.status]||'网络异常或回执不匹配';
+  await update(state=>{state.retryAt=now+300000;state.uploadStatus=reason+'；上传未确认，保留原批次，5分钟后重试';});
  }
 }
