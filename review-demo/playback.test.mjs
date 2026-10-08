@@ -1,0 +1,5 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';
+import * as playback from './dist/remote.mjs';
+const rows=[{id:'a',start:0,duration:60,url:'/a'},{id:'b',start:60,duration:60,url:'/b'},{id:'c',start:125,duration:60,url:'/c'}];
+test('segment lookup uses half-open boundaries and leaves unavailable gaps empty',()=>{assert.equal(typeof playback.recordingAt,'function');assert.equal(playback.recordingAt(rows,59).id,'a');assert.equal(playback.recordingAt(rows,60).id,'b');assert.equal(playback.recordingAt(rows,120),null);assert.equal(playback.recordingAt(rows,124),null);assert.equal(playback.recordingAt(rows,185),null);});
+test('automatic continuation advances only to available contiguous segments',()=>{assert.equal(typeof playback.nextRecording,'function');assert.equal(playback.nextRecording(rows,rows[0]).id,'b');assert.equal(playback.nextRecording(rows,rows[1]),null);assert.equal(playback.nextRecording([...rows,{id:'d',start:120.8,duration:4,url:'/d'}],rows[1]).id,'d');});

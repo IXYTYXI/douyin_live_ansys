@@ -20,3 +20,8 @@ test('real recording keeps actual timestamps and cannot inject combined mock tex
  assert.equal(s.teacher,'测试主播');assert.equal(s.realRecording,true);assert.equal(s.combinedTest,false);
  assert.deepEqual(samples(s,0,10),[{t:3.25,value:51}]);assert.equal(s.transcriptLines.length,1);assert.equal(s.transcriptLines[0].t,46.2);assert.equal(summary(s,0,450).theme,'');
 });
+test('formal live sessions retain raw review identity and expose only actual data',()=>{
+ const s=remoteSession({source:'live-review',id:'live-42',teacher:'老师',live:true,realRecording:true,startedAt:'2026-10-08T03:00:00Z',duration:120,samples:[],segments:[]});
+ assert.equal(s.id,'live-42');assert.equal(s.sessionId,'live-42');assert.equal(s.source,'live-review');assert.equal(s.live,true);assert.deepEqual(samples(s,0,120),[]);assert.deepEqual(transcripts(s,0,120),[]);assert.equal(summary(s,0,120).theme,'');
+});
+test('legacy display identity does not leak into review sessionId',()=>{const s=remoteSession({source:'asr-integration-test',id:'old',startedAt:'2026-10-08T03:00:00Z',duration:60,samples:[]});assert.equal(s.sessionId,'old');});
