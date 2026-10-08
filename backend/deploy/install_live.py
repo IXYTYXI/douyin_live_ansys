@@ -1,5 +1,5 @@
 """Deploy an isolated RTMPS recorder and company ASR worker after git pull."""
-import hashlib,json,os,secrets,subprocess,tarfile,tempfile,urllib.request
+import hashlib,json,os,secrets,subprocess,sys,tarfile,tempfile,urllib.request
 from pathlib import Path
 import psycopg
 from psycopg import sql
@@ -22,7 +22,9 @@ def main():
     binary=Path('/usr/local/lib/diting/mediamtx-v1.21.1')
     if not binary.exists():
         url='https://github.com/bluenviron/mediamtx/releases/download/v1.21.1/mediamtx_v1.21.1_linux_amd64.tar.gz'
-        with urllib.request.urlopen(url,timeout=45) as response:data=response.read(100_000_000)
+        if len(sys.argv)>1:data=Path(sys.argv[1]).read_bytes()
+        else:
+            with urllib.request.urlopen(url,timeout=45) as response:data=response.read(100_000_000)
         if hashlib.sha256(data).hexdigest()!='653abc672a3e693f8d3b2717752492fdcfb8072291ec108d03d3dd857411b0ee':raise RuntimeError('MediaMTX checksum mismatch')
         with tempfile.TemporaryDirectory() as folder:
             archive=Path(folder)/'mtx.tar.gz';archive.write_bytes(data)
@@ -38,7 +40,6 @@ def main():
     pg=docker_env('postgres');admin=make_conninfo(host='127.0.0.1',port=5432,user=pg.get('POSTGRES_USER','postgres'),password=pg['POSTGRES_PASSWORD'],dbname=dbname)
     role='diting_live_worker'
     # Initialize new ASR schema only. Never change the old recording schema or other services.
-    import sys
     sys.path.insert(0,str(ROOT))
     from backend.pipeline import Pipeline
     data=Path(review['DATA_DIR']);inbox=data/'live-inbox';inbox.mkdir(exist_ok=True)
