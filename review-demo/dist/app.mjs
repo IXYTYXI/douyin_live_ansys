@@ -3,7 +3,7 @@ import {anchorSession} from './anchor-fixture.mjs';
 import {normalizeTags,mountTags} from './tags.mjs';
 import {sessions,timeLabel,rangeLabel,selection,samples,stats,transcripts,summary,draftKey,limitTheme} from './model.mjs';
 let apiSession=null,apiError=null;
-if(new URLSearchParams(location.search).get('test')==='1'){try{apiSession=await loadTestSession();sessions.push(apiSession);}catch(e){apiError=e.message;}}
+if(new URLSearchParams(location.search).get('test')==='1'||document.querySelector('meta[name=diting-mode]')?.content==='real'){try{apiSession=await loadTestSession();if(apiSession.realRecording)sessions.splice(0);sessions.push(apiSession);}catch(e){apiError=e.message;}}
 if(anchorSession)sessions.push(anchorSession);
 const $=id=>document.getElementById(id);let si=(apiSession||anchorSession)?sessions.length-1:0,top=0,step=600,index=null,cursor=0,playing=false,scope='range',drafts={},storageOK=true,lastTick=0;
 try{const stored=JSON.parse(localStorage.getItem('diting-demo-reviews-v1')||'{}');if(stored&&typeof stored==='object'&&!Array.isArray(stored))drafts=stored;}catch{storageOK=false;}
