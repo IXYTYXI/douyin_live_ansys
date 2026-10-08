@@ -1,3 +1,2 @@
-// Deployment must set one approved HTTPS ingestion endpoint and matching host permission.
-// Do not place credentials in this source file. A short-lived upload-only token is required.
-export const INGEST_URL=null;
+// Public endpoint only; upload credentials are configured locally, never bundled.
+export const INGEST_URL='https://live-ansys.ai.lab.yc345.tv/api/metrics/batches';

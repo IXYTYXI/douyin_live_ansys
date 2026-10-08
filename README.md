@@ -36,3 +36,16 @@ node --test tests/*.test.mjs review-demo/*.test.mjs
 真实直播快照、Sites 部署配置、登录凭据及 Windows EXE 未提交。`anchor-fixture.mjs` 为 null 占位；页面保留真实数据适配能力。飞书测试表地址和标识已替换为 `REPLACE_WITH_TEST_*`，必须配置独立测试表后才能联调。安装包缺少 EXE，不能直接作为完整安装包运行；原桥接二进制没有对应源码。
 
 本次发布为代码备份，不代表全自动直播采集或 OBS-ASR 链路已交付。不要将测试配置指向业务表。
+
+### 已部署的独立采集入口
+
+插件批量上传地址：`https://live-ansys.ai.lab.yc345.tv/api/metrics/batches`。
+在插件「上传设置」中填入管理员提供的上传专用令牌并授权此域名。
+令牌不包含在源码或插件包中；它只能上传，不能读取复盘数据。
+每10秒采样、每5分钟发送最多300条，收到相同批次的数据库确认后才移除本地记录。
+切换接口前若有未确认批次，请先完成原批次上传，不要删除本地队列。
+
+服务器在拉取本分支后运行 `.venv-review/bin/python backend/deploy/install_ingest.py`。
+脚本沿用已有独立数据库 `diting_plugin_test_20261008`，增加 `diting-ingest.service`
+（仅监听127.0.0.1:18777）和Nginx精确上传路由。重复部署保留上传凭证；配置仅存于
+root可读的 `/etc/diting-ingest.env`。此入口只保存原始采样，不猜测与旧录像的场次关联。

@@ -116,3 +116,30 @@ class MetricsTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             store.accept(data)
         store.connect.assert_not_called()
+
+
+class UploadOnlyTest(unittest.TestCase):
+    def test_upload_token_cannot_read_metrics(self):
+        store = Mock()
+        store.accept.return_value = {'batchId': 'batch-1', 'acceptedIds': ['record-1']}
+        server = make_server(None, None, 'k'*32, port=0, metrics=store, upload_only=True)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        base = 'http://127.0.0.1:' + str(server.server_port)
+        headers = {'Authorization': 'Bearer ' + 'k'*32, 'Content-Type': 'application/json'}
+        try:
+            for path in ['/api/metrics?runId=run-1', '/api/sessions/recording', '/health']:
+                with self.assertRaises(urllib.error.HTTPError) as err:
+                    urllib.request.urlopen(urllib.request.Request(base+path, headers=headers))
+                self.assertEqual(err.exception.code, 404)
+            store.read.assert_not_called()
+            req = urllib.request.Request(base+'/api/metrics/batches', data=json.dumps(batch()).encode(), headers=headers)
+            with urllib.request.urlopen(req) as response:
+                self.assertEqual(json.load(response)['acceptedIds'], ['record-1'])
+            req.remove_header('Authorization')
+            with self.assertRaises(urllib.error.HTTPError) as err:
+                urllib.request.urlopen(req)
+            self.assertEqual(err.exception.code, 401)
+            self.assertEqual(store.accept.call_count, 1)
+        finally:
+            server.shutdown();server.server_close();thread.join()

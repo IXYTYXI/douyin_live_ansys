@@ -32,7 +32,7 @@ class MediaSigner:
             return False
 
 
-def make_server(pipeline, signer, api_key, host='127.0.0.1', port=18772, metrics=None):
+def make_server(pipeline, signer, api_key, host='127.0.0.1', port=18772, metrics=None, upload_only=False):
     if len(api_key) < 24:
         raise ValueError('REVIEW_API_KEY must contain at least 24 characters')
 
@@ -79,6 +79,8 @@ def make_server(pipeline, signer, api_key, host='127.0.0.1', port=18772, metrics
                 return self.reply(503, {'error': 'storage unavailable; retry same batch'})
 
         def do_GET(self):
+            if upload_only:
+                return self.reply(404, {'error': 'not found'})
             parsed = urlsplit(self.path)
             query = parse_qs(parsed.query)
             path = parsed.path
