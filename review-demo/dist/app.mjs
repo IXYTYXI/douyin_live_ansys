@@ -87,8 +87,10 @@ async function saveDatabase(){
  }catch(e){if(session()===s)$('save-status').textContent=e.message+'；本页修改已保留';}finally{$('save').disabled=false;}
 }
 
-$('export-pdf').onclick=()=>{
- const s=session();if(s.id==='empty'||apiError){$('toast').textContent='当前数据未加载成功，暂不能导出';$('toast').classList.add('show');setTimeout(()=>$('toast').classList.remove('show'),2300);return;}
- const [a,b]=bounds();const chart=$('chart').querySelector('svg')?.cloneNode(true);chart?.querySelector('#chart-cursor')?.remove();chart?.querySelector('#chart-position-dot')?.remove();
- printReview({teacher:s.teacher,date:s.date,range:rangeLabel(s,a,b),source:$('source-note').textContent,exportedAt:new Date().toLocaleString('zh-CN'),chartSVG:chart?.outerHTML,chartStatus:$('chart-status').textContent,theme:$('theme').value,keywords:[...tagValues.keywords],noteScope:scope==='session'?'整场直播':rangeLabel(s,a,b),saveStatus:$('save-status').textContent,conclusion:$('conclusion').value,adjustment:$('adjustment').value,transcript:transcripts(s,a,b).map(line=>({time:timeLabel(s,line.t,true),text:`${line.synthetic?'[模拟] ':''}${s.teacher}：${line.text}`}))});
+$('export-pdf').onclick=async()=>{
+ const s=session(),button=$('export-pdf');if(s.id==='empty'||apiError){$('toast').textContent='当前数据未加载成功，暂不能导出';$('toast').classList.add('show');setTimeout(()=>$('toast').classList.remove('show'),2300);return;}
+ button.disabled=true;
+ try{await printReview(document.querySelector('main'));}
+ catch(error){console.error('PDF export failed',error);$('toast').textContent='页面截图失败，请重试';$('toast').classList.add('show');setTimeout(()=>$('toast').classList.remove('show'),3500);}
+ finally{button.disabled=false;}
 };
