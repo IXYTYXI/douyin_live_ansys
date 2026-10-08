@@ -15,3 +15,8 @@ test('combined test links prior metrics, real text and generated review by range
  assert.equal(summary(s,600,1200).theme,'画图法解应用题');assert.match(summary(s,600,1200).body,/120/);
  assert.equal(transcripts(s,600,1200).length,20);assert.ok(transcripts(s,600,1200).every(r=>r.synthetic));assert.equal(summary(s,1200,1800).theme,'乘法练习与课堂回顾');
 });
+test('real recording keeps actual timestamps and cannot inject combined mock text',()=>{
+ const s=remoteSession({source:'asr-integration-test',id:'recording',realRecording:true,combinedTest:true,teacher:'测试主播',startedAt:'2026-10-08T03:00:42Z',duration:450,samples:[{t:3.25,value:51}],segments:[{start:45,state:'done',utterances:[{start:1.2,end:2.8,text:'真实句子'}]}]});
+ assert.equal(s.teacher,'测试主播');assert.equal(s.realRecording,true);assert.equal(s.combinedTest,false);
+ assert.deepEqual(samples(s,0,10),[{t:3.25,value:51}]);assert.equal(s.transcriptLines.length,1);assert.equal(s.transcriptLines[0].t,46.2);assert.equal(summary(s,0,450).theme,'');
+});
