@@ -32,8 +32,10 @@ class MetricsStore:
     def migrate(self):
         with self.connect() as db:
             db.execute((Path(__file__).parent / 'migrations/001_metrics.sql').read_text())
+            db.execute((Path(__file__).parent / 'migrations/007_collector_ends.sql').read_text())
 
     def accept(self, batch):
+        if isinstance(batch,dict) and batch.get('kind')=='finish':return self.finish(batch)
         if not isinstance(batch, dict) or batch.get('schema') != 1 or not identifier(batch.get('batchId')):
             raise ValueError('invalid batch')
         records = batch.get('records')
@@ -79,6 +81,7 @@ class MetricsStore:
             for row in records:
                 encoded = canonical(row)
                 old = db.execute('SELECT payload FROM diting_metrics.samples WHERE id=%s', (row['id'],)).fetchone()
+                if not old and db.execute('SELECT 1 FROM diting_metrics.run_ends WHERE run_id=%s',(row['runId'],)).fetchone():raise Conflict('collector run already finished')
                 if old and old[0] != encoded:
                     raise Conflict('record id reused with different content')
                 db.execute('INSERT INTO diting_metrics.samples(id,run_id,captured_at,payload) VALUES(%s,%s,%s,%s) ON CONFLICT(id) DO NOTHING',
@@ -86,6 +89,33 @@ class MetricsStore:
                 self.project_record(db, row)
             db.execute('INSERT INTO diting_metrics.batches VALUES(%s,%s) ON CONFLICT(id) DO NOTHING', (batch['batchId'], payload))
         return {'batchId': batch['batchId'], 'acceptedIds': [row['id'] for row in records]}
+
+    def finish(self, event):
+        if event.get('schema')!=1 or not identifier(event.get('runId')) or event.get('reason')!='manual':raise ValueError('invalid finish')
+        if not isinstance(event.get('teacher'),str) or not 1<=len(event['teacher'])<=60:raise ValueError('invalid teacher')
+        count=event.get('expectedCount')
+        if count is not None and (type(count) is not int or count<0):raise ValueError('invalid count')
+        def stamp(value):
+            try:
+                result=datetime.fromisoformat(value.replace('Z','+00:00'))
+                if result.tzinfo is None:raise ValueError()
+                return result
+            except (ValueError,AttributeError):raise ValueError('invalid timestamp')
+        ended=stamp(event.get('endedAt'))
+        last=stamp(event['lastCapturedAt']) if event.get('lastCapturedAt') else None
+        if last and last>ended:raise ValueError('end precedes last sample')
+        payload=canonical(event)
+        with self.connect() as db:
+            db.execute('SELECT pg_advisory_xact_lock(7420192401)')
+            old=db.execute('SELECT payload,verified FROM diting_metrics.run_ends WHERE run_id=%s',(event['runId'],)).fetchone()
+            if old:
+                if old[0]!=payload:raise Conflict('finish changed after confirmation')
+                return {'runId':event['runId'],'finished':True,'verified':old[1]}
+            actual,latest,teachers=db.execute("SELECT count(*),max(captured_at),count(*) FILTER (WHERE payload::jsonb->>'teacher'<>%s) FROM diting_metrics.samples WHERE run_id=%s",(event['teacher'],event['runId'])).fetchone()
+            if teachers or (count is not None and actual!=count) or latest!=last:raise Conflict('samples do not match finish')
+            verified=count is not None
+            db.execute('INSERT INTO diting_metrics.run_ends(run_id,payload,verified) VALUES(%s,%s,%s)',(event['runId'],payload,verified))
+        return {'runId':event['runId'],'finished':True,'verified':verified}
 
     def read(self, run_id, after=0, limit=300):
         if not identifier(run_id) or after < 0 or not 1 <= limit <= 1000:

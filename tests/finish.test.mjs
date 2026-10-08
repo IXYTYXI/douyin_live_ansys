@@ -1,0 +1,4 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';
+import {flushFinishes} from '../anchor-collector/finish.mjs';
+test('tail blocks finish and lost ack survives retry',async()=>{const event={schema:1,kind:'finish',runId:'r',expectedCount:1};let state={records:[{runId:'r'}],finishes:[event]};let calls=0;const update=async f=>f(state);await flushFinishes({update,post:async()=>{calls++;}});assert.equal(calls,0);state.records=[];await flushFinishes({update,post:async()=>{throw Error('offline')}});assert.equal(state.finishes.length,1);await flushFinishes({update,post:async()=>({runId:'r',finished:true,verified:true})});assert.equal(state.finishes.length,0);assert.match(state.finishStatus,/确认/);});
+test('unrelated confirmation cannot remove pending finish',async()=>{const state={records:[],finishes:[{runId:'r'}]};await flushFinishes({update:async f=>f(state),post:async()=>({runId:'wrong',finished:true})});assert.equal(state.finishes.length,1);});

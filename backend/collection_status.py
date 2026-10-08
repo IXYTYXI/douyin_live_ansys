@@ -14,8 +14,9 @@ def collection_status(store):
           max(captured_at),max(received_at)
           FROM diting_metrics.samples GROUP BY run_id,payload::jsonb->>'teacher'
           ORDER BY max(received_at) DESC LIMIT 20""").fetchall()
+        ends=dict(db.execute('SELECT run_id,verified FROM diting_metrics.run_ends WHERE run_id=ANY(%s)',([r[0] for r in rows],)).fetchall())
     return {'runs':[{'runId':r,'teacher':teacher,'count':count,
-                    'lastCapturedAt':captured.isoformat(),'lastReceivedAt':received.isoformat()}
+                    'finishState':('verified' if ends[r] else 'unverified') if r in ends else 'not-confirmed','lastCapturedAt':captured.isoformat(),'lastReceivedAt':received.isoformat()}
                    for r,teacher,count,captured,received in rows]}
 
 

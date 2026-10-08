@@ -14,7 +14,7 @@ class ChannelDatabaseTests(unittest.TestCase):
         if not conninfo_to_dict(cls.dsn)['dbname'].startswith('diting_channel_test_'):raise RuntimeError('not a dedicated test database')
         cls.store=LiveStore(cls.dsn)
         with cls.store.connect() as db:
-            for name in ('001_metrics.sql','005_live.sql','006_channels.sql'):
+            for name in ('001_metrics.sql','007_collector_ends.sql','005_live.sql','006_channels.sql'):
                 db.execute((Path(__file__).resolve().parents[1]/'migrations'/name).read_text())
 
     def test_fixed_binding_reconnect_new_show_and_retry(self):

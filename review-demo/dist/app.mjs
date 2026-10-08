@@ -106,7 +106,7 @@ async function refreshCollectionStatus(){
  if(!formal||statusLoading)return;statusLoading=true;
  try{const response=await fetch('/api/collection-status',{cache:'no-store'});if(!response.ok)throw Error();const data=await response.json();
  const stamp=value=>new Date(value).toLocaleString('zh-CN');
- $('collection-runs').replaceChildren(...data.runs.map(row=>{const p=document.createElement('p');p.textContent=`${row.teacher} · 批次 ${row.runId.slice(0,8)} · 已入库 ${row.count} 条 · 最近采样 ${stamp(row.lastCapturedAt)} · 最近入库 ${stamp(row.lastReceivedAt)}`;return p;}));
+ $('collection-runs').replaceChildren(...data.runs.map(row=>{const p=document.createElement('p');p.textContent=`${row.teacher} · 批次 ${row.runId.slice(0,8)} · 已入库 ${row.count} 条 · 最近采样 ${stamp(row.lastCapturedAt)} · 最近入库 ${stamp(row.lastReceivedAt)} · ${({'verified':'采集结束已核验','unverified':'已登记结束（旧批次未核验总数）','not-confirmed':'尚无结束确认'})[row.finishState]||'结束状态未知'}`;return p;}));
  if(!data.runs.length)$('collection-runs').textContent='数据库尚未收到采样';
  }catch{$('collection-runs').textContent='采集状态查询失败，请稍后重试（不能据此判断采集是否正常）';}finally{statusLoading=false;}
 }

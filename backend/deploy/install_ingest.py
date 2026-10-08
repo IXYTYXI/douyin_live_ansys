@@ -33,12 +33,14 @@ def install():
     with psycopg.connect(host='127.0.0.1', port=5432, user=env.get('POSTGRES_USER', 'postgres'),
                           password=env['POSTGRES_PASSWORD'], dbname=connection['dbname']) as db:
         db.execute((root/'backend/migrations/001_metrics.sql').read_text())
+        db.execute((root/'backend/migrations/007_collector_ends.sql').read_text())
+        db.execute('GRANT SELECT ON diting_metrics.run_ends TO diting_review_reader')
         if not db.execute('SELECT 1 FROM pg_roles WHERE rolname=%s', (role,)).fetchone():
             db.execute(sql.SQL('CREATE ROLE {} LOGIN').format(sql.Identifier(role)))
         db.execute(sql.SQL('ALTER ROLE {} PASSWORD {}').format(sql.Identifier(role), sql.Literal(password)))
         db.execute(sql.SQL('GRANT CONNECT ON DATABASE {} TO {}').format(sql.Identifier(connection['dbname']), sql.Identifier(role)))
         db.execute(sql.SQL('GRANT USAGE ON SCHEMA diting_metrics TO {}').format(sql.Identifier(role)))
-        db.execute(sql.SQL('GRANT SELECT, INSERT ON diting_metrics.samples, diting_metrics.batches TO {}').format(sql.Identifier(role)))
+        db.execute(sql.SQL('GRANT SELECT, INSERT ON diting_metrics.samples, diting_metrics.batches, diting_metrics.run_ends TO {}').format(sql.Identifier(role)))
         db.execute(sql.SQL('GRANT USAGE ON SEQUENCE diting_metrics.samples_seq_seq TO {}').format(sql.Identifier(role)))
     values = {'METRICS_DATABASE_URL': make_conninfo(host='127.0.0.1', port=5432, user=role,
               password=password, dbname=connection['dbname']), 'METRICS_API_KEY': token}
