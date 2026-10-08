@@ -12,10 +12,9 @@ export async function printReview(root){
  let protectedRects=[];
  const canvas=await html2canvas(root,{scale:2,backgroundColor:'#f4f6fb',logging:false,useCORS:true,onclone:doc=>{
   const main=doc.querySelector('main');
-  // Preserve the viewport layout, while exposing content hidden by inner scrollbars.
+  // Preserve the viewport layout, including fixed-height scrollable regions.
   main.style.width=root.getBoundingClientRect().width+'px';main.style.maxWidth='none';
   doc.querySelector('#export-pdf').style.visibility='hidden';
-  const transcript=doc.querySelector('#transcript');transcript.style.maxHeight='none';transcript.style.overflow='visible';
   main.querySelectorAll('details').forEach(details=>{
    const box=doc.createElement('div');box.className=details.className;
    const heading=doc.createElement('div');heading.textContent=(details.open?'▾ ':'▸ ')+details.querySelector('summary').textContent;box.append(heading);
@@ -32,8 +31,9 @@ export async function printReview(root){
   doc.querySelectorAll('textarea, input[type="text"], select').forEach(input=>{
    const text=doc.createElement('div'),style=doc.defaultView.getComputedStyle(input);
    for(const name of style)text.style.setProperty(name,style.getPropertyValue(name));
-   text.textContent=input.tagName==='SELECT'?input.selectedOptions[0]?.textContent:input.value||input.placeholder;
-   text.style.whiteSpace='pre-wrap';text.style.overflowWrap='anywhere';text.style.height='auto';text.style.minHeight=style.height;text.style.overflow='visible';
+   const content=doc.createElement('div');content.textContent=input.tagName==='SELECT'?input.selectedOptions[0]?.textContent:input.value||input.placeholder;
+   text.style.whiteSpace=input.tagName==='TEXTAREA'?'pre-wrap':'pre';text.style.overflowWrap='anywhere';text.style.overflow='hidden';
+   content.style.transform=`translate(${-input.scrollLeft}px, ${-input.scrollTop}px)`;text.append(content);
    input.replaceWith(text);
   });
   const offset=main.getBoundingClientRect().top;
