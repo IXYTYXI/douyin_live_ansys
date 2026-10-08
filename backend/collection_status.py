@@ -17,3 +17,21 @@ def collection_status(store):
     return {'runs':[{'runId':r,'teacher':teacher,'count':count,
                     'lastCapturedAt':captured.isoformat(),'lastReceivedAt':received.isoformat()}
                    for r,teacher,count,captured,received in rows]}
+
+
+def finishing_status(data, summaries):
+    if data.get('live'):return ['仍在接收直播片段，尚未进入停播收尾。']
+    duration=data.get('duration',0)
+    result=['已登记录像 '+str(len(data.get('recordings',[])))+' 段；这里只能核对已入库片段，不能确认未到达的录像。']
+    segments=data.get('segments',[])
+    failed=sum(s['state']=='failed' for s in segments)
+    pending=sum(s['state'] not in ('done','failed') for s in segments)
+    result.append('转写失败 '+str(failed)+' 段，待处理 '+str(pending)+' 段。' if failed or pending else '已登记片段转写完成。' if segments else '尚无转写片段。')
+    if data.get('analysisReadyAt',0)<duration:result.append('人数数据尚未覆盖录像末尾，末段总结可能仍在等待。')
+    from .live import analysis_windows
+    expected={(round(a*1000),round(b*1000)) for a,b in analysis_windows(duration,False)}
+    done={(round(s['start']*1000),round(s['end']*1000)) for s in summaries if s['status']=='done'}
+    remaining=len(expected-done)
+    result.append('总结仍有 '+str(remaining)+' 个区间未完成。' if remaining else '当前录像范围的总结已完成。' if duration else '尚无可总结的录像范围。')
+    result.append('尾批人数是否全部上传：需在插件确认待上传为0；服务器无法确认浏览器内剩余记录。')
+    return result

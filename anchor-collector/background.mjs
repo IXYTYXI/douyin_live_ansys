@@ -10,7 +10,7 @@ chrome.runtime.onMessage.addListener((message,sender,reply)=>{
  if(!popup&&!(content&&message.type==='SAMPLE')){reply({ok:false,error:'不允许的来源'});return false;}
  const task=pending.then(async()=>{
   const {settings={},records=[]}=await chrome.storage.local.get(['settings','records']);
-  if(message.type==='STATUS'){const {uploadStatus,lastUploadedAt,ingestUrl}=await chrome.storage.local.get(['uploadStatus','lastUploadedAt','ingestUrl']);return {settings,count:records.length,last:records.at(-1)||null,uploadStatus,lastUploadedAt,ingestUrl};}
+  if(message.type==='STATUS'){const {uploadStatus,lastUploadedAt,ingestUrl,uploadToken}=await chrome.storage.local.get(['uploadStatus','lastUploadedAt','ingestUrl','uploadToken']);return {settings,count:records.length,last:records.at(-1)||null,oldestPendingAt:records[0]?.capturedAt||null,uploadConfigured:Boolean(ingestUrl&&uploadToken),uploadStatus,lastUploadedAt,ingestUrl};}
   if(message.type==='CONFIGURE_UPLOAD'){
    const ingestUrl=validateEndpoint(message.url);
    if(!await chrome.permissions.contains({origins:[new URL(ingestUrl).origin+'/*']}))throw Error('尚未授权接收地址');

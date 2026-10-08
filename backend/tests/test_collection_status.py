@@ -7,3 +7,10 @@ class StatusTests(unittest.TestCase):
   self.assertNotIn('secret',str(result))
  def test_empty_is_empty_not_success(self):
   self.assertEqual(processing_status({},[])['asr'],{})
+
+class FinishTests(unittest.TestCase):
+ def test_unseen_tail_never_claims_whole_live_complete(self):
+  from backend.collection_status import finishing_status
+  result=finishing_status({'live':False,'duration':600,'analysisReadyAt':400,'segments':[{'state':'done'}],'recordings':[{}]},[])
+  self.assertTrue(any('人数' in s for s in result))
+  self.assertTrue(any('插件' in s for s in result))
