@@ -10,6 +10,10 @@ parser.add_argument('vhost', type=Path)
 parser.add_argument('--remove', action='store_true')
 args = parser.parse_args()
 path = args.vhost.resolve(strict=True)
+legacy_backup = path.with_name(path.name + '.diting-backup')
+backup = Path('/var/backups') / (path.name + '.diting-backup')
+if legacy_backup.exists():
+    legacy_backup.replace(backup)
 old = path.read_text()
 marker = '# BEGIN DITING TEST AUDIO\n'
 end = '# END DITING TEST AUDIO\n'
@@ -27,7 +31,6 @@ if not args.remove:
     snippet = Path(__file__).with_name('test-audio-location.conf').read_text()
     updated = updated[:pos] + marker + snippet + end + updated[pos:]
 if updated != old:
-    backup = path.with_name(path.name + '.diting-backup')
     if not backup.exists():
         backup.write_text(old)
     path.write_text(updated)
