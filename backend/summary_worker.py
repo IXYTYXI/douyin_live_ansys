@@ -44,7 +44,9 @@ def cycle(store,session,get_data):
                 attempts=row[2]+1 if row and row[0]==digest else 1
                 db.execute("INSERT INTO diting_review.summaries(session_id,start_ms,end_ms,input_hash,model,status,attempts) VALUES(%s,%s,%s,%s,%s,'processing',%s) ON CONFLICT(session_id,start_ms,end_ms) DO UPDATE SET input_hash=EXCLUDED.input_hash,model=EXCLUDED.model,status='processing',fields=NULL,attempts=EXCLUDED.attempts,updated_at=now()",(session,round(a*1000),round(b*1000),digest,model,attempts));db.commit()
                 try:fields=generate(payload);status='done'
-                except Exception:fields=None;status='failed'
+                except Exception as error:
+                    fields=None;status='failed'
+                    print('Summary failed:',type(error).__name__,getattr(error,'code',''),flush=True)
                 db.execute("UPDATE diting_review.summaries SET status=%s,fields=%s::jsonb,next_at=now()+interval '5 minutes',updated_at=now() WHERE session_id=%s AND start_ms=%s AND end_ms=%s",(status,json.dumps(fields,ensure_ascii=False),session,round(a*1000),round(b*1000)));db.commit()
             finally:
                 db.execute('SELECT pg_advisory_unlock(hashtext(%s))',(lock,));db.commit()
