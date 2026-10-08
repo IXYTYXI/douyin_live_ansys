@@ -111,7 +111,9 @@ $('export-pdf').onclick=async()=>{
 function renderCollectionStatus(){
  const panel=$('collection-status');panel.hidden=!formal;if(!formal)return;
  const status=session().collectionStatus;
- $('collection-finishing').textContent=status?.finishing?.join(' ')||'';
+ const readiness=status?.readiness;
+ $('collection-status').querySelector('summary').textContent='采集与处理状态'+(readiness?' · '+readiness.label:'');
+ $('collection-finishing').textContent=[...(readiness?.reasons||[]),...(status?.finishing||[])].join(' ');
  $('collection-current').textContent=status?`当前场次：${status.teacher} · 已关联人数 ${status.count} 条 · 关联方式：${status.binding==='teacher-time'?'主播昵称＋时间（插件与OBS昵称须一致）':'采集批次ID'} · 录像 ${status.recordings} 段 · ASR ${Object.entries(status.asr).map(([k,v])=>( {done:'完成',queued:'排队',pending:'排队',submitted:'处理中',processing:'处理中',failed:'失败'}[k]||k)+' '+v).join('，')||'暂无片段'} · 总结 ${Object.entries(status.summaries).map(([k,v])=>({done:'完成',pending:'等待',running:'生成中',failed:'失败'}[k]||k)+' '+v).join('，')||'暂无'}`:'当前场次暂无处理状态';
 }
 let statusLoading=false;

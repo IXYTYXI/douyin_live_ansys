@@ -8,6 +8,7 @@ from .metrics import Conflict
 from .reviews import ReviewStore
 from .live import LiveStore,stream_password
 from .summary_worker import cycle
+from .readiness import analysis_ready_at,review_readiness
 from .collection_status import collection_status,processing_status,finishing_status
 from .server import make_server,MediaSigner
 
@@ -29,9 +30,13 @@ def main():
         duration=max((r['start']+r['duration'] for r in data['recordings']),default=0)
         rows=store.sample_rows(meta,data['startedAtUnix'],duration)
         samples=[{'t':float(t),'value':r['metrics'].get('online',{}).get('value')} for t,r in rows if 0<=float(t)<duration]
-        # Wait for the five-minute upload to cover the audio window before summarizing.
-        ready=max((float(t)+15 for t,_ in rows),default=0) if session.startswith('live-') else duration
-        return {**data,**meta,'duration':duration,'samples':samples,'analysisReadyAt':ready}
+        run_ids=list({r['runId'] for _,r in rows})
+        with store.connect() as db:
+            ends=dict(db.execute('SELECT run_id,verified FROM diting_metrics.run_ends WHERE run_id=ANY(%s)',(run_ids,)).fetchall())
+        result={**data,**meta,'duration':duration,'samples':samples,'collectorConfirmed':bool(run_ids) and all(ends.get(r) is True for r in run_ids)}
+        result['analysisReadyAt']=analysis_ready_at(result,time.time()) if session.startswith('live-') else duration
+        return result
+
     signer=MediaSigner(os.environ['MEDIA_SIGNING_KEY'],os.environ['PUBLIC_BASE_URL'])
     server=make_server(pipeline_for(default),signer,os.environ['REVIEW_API_KEY'],port=18776)
     base=server.RequestHandlerClass;root=Path(__file__).parent.parent/'review-demo/dist'
@@ -80,7 +85,7 @@ def main():
                     data=review_data(session)
                     return self.reply(200,{**data,'source':'live-review' if session.startswith('live-') else 'asr-integration-test','realRecording':True,
                         'startedAt':datetime.fromtimestamp(data['startedAtUnix'],timezone.utc).isoformat(),
-                        'collectionStatus':{'finishing':finishing_status(data,reviews.summaries(session)),'count':len(data['samples']),'binding':'teacher-time' if data.get('channelId') else 'run-id','teacher':data['teacher'],**processing_status(data,reviews.summaries(session))},
+                        'collectionStatus':{'readiness':review_readiness(data,reviews.summaries(session)),'finishing':finishing_status(data,reviews.summaries(session)),'count':len(data['samples']),'binding':'teacher-time' if data.get('channelId') else 'run-id','teacher':data['teacher'],**processing_status(data,reviews.summaries(session))},
                         'databaseReviews':True,'notes':reviews.read_notes(session),'summaries':reviews.summaries(session),
                         'summaryConfigured':all(os.environ.get(k) for k in ('SUMMARY_BASE_URL','SUMMARY_MODEL','SUMMARY_API_KEY')),
                         'recordings':[{**r,'url':signer.url(r['media'],ttl=3600)} for r in data['recordings']]})

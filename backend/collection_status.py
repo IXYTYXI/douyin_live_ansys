@@ -34,5 +34,5 @@ def finishing_status(data, summaries):
     done={(round(s['start']*1000),round(s['end']*1000)) for s in summaries if s['status']=='done'}
     remaining=len(expected-done)
     result.append('总结仍有 '+str(remaining)+' 个区间未完成。' if remaining else '当前录像范围的总结已完成。' if duration else '尚无可总结的录像范围。')
-    result.append('尾批人数是否全部上传：需在插件确认待上传为0；服务器无法确认浏览器内剩余记录。')
+    result.append('关联采集批次的结束事件已核验。' if data.get('collectorConfirmed') else '尾批人数是否全部上传：需在插件确认待上传为0；服务器尚未收到完整结束核验。')
     return result
