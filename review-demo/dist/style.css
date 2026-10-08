@@ -10,3 +10,5 @@
 .chart-empty{height:120px;display:flex;align-items:center;justify-content:center;color:#8591a7;font-size:13px;margin:0}#session-aggregate{font-size:12px;line-height:1.7;margin:4px 0 0}
 
 .lesson{width:100%;aspect-ratio:auto}
+
+.export-pdf{float:right;margin-left:12px;font-size:12px}

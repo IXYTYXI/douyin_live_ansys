@@ -1,3 +1,4 @@
+import {printReview} from './print.mjs';
 import {loadTestSession,loadSession,loadSessions,recordingAt,nextRecording} from './remote.mjs';
 import {anchorSession} from './anchor-fixture.mjs';
 import {normalizeTags,mountTags} from './tags.mjs';
@@ -85,3 +86,9 @@ async function saveDatabase(){
  ranges.forEach((r,i)=>{if(JSON.stringify(drafts[r.k])===snapshots[i])dirtyKeys.delete(r.k);});s.notes=result.notes;hydrateNotes(s);if(session()!==s)return;edits();$('save-status').textContent=dirtyKeys.has(noteKey())||dirtyKeys.has(key())?'已保存提交版本，仍有新修改未保存':'已保存到数据库';
  }catch(e){if(session()===s)$('save-status').textContent=e.message+'；本页修改已保留';}finally{$('save').disabled=false;}
 }
+
+$('export-pdf').onclick=()=>{
+ const s=session();if(s.id==='empty'||apiError){$('toast').textContent='当前数据未加载成功，暂不能导出';$('toast').classList.add('show');setTimeout(()=>$('toast').classList.remove('show'),2300);return;}
+ const [a,b]=bounds();const chart=$('chart').querySelector('svg')?.cloneNode(true);chart?.querySelector('#chart-cursor')?.remove();chart?.querySelector('#chart-position-dot')?.remove();
+ printReview({teacher:s.teacher,date:s.date,range:rangeLabel(s,a,b),source:$('source-note').textContent,exportedAt:new Date().toLocaleString('zh-CN'),chartSVG:chart?.outerHTML,chartStatus:$('chart-status').textContent,theme:$('theme').value,keywords:[...tagValues.keywords],noteScope:scope==='session'?'整场直播':rangeLabel(s,a,b),saveStatus:$('save-status').textContent,conclusion:$('conclusion').value,adjustment:$('adjustment').value,transcript:transcripts(s,a,b).map(line=>({time:timeLabel(s,line.t,true),text:`${line.synthetic?'[模拟] ':''}${s.teacher}：${line.text}`}))});
+};
