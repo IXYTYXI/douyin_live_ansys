@@ -9,3 +9,5 @@ test('draft keys distinguish sessions and time ranges',()=>{assert.notEqual(draf
 import {limitTheme} from './dist/model.mjs';
 test('period themes are single concise sentences within sixteen characters',()=>{for(const session of sessions){for(let a=0;a<session.duration;a+=600){const title=summary(session,a,Math.min(a+1800,session.duration)).theme;assert.ok(typeof title==='string'&&Array.from(title).length<=16);assert.ok(!title.includes('、'));}}});
 test('manual theme is limited to sixteen characters',()=>assert.equal(Array.from(limitTheme('一二三四五六七八九十一二三四五六七八九十')).length,16));
+
+test('database millisecond rounding preserves recording draft identity',()=>{assert.equal(draftKey('recording',0,450.4306875),draftKey('recording',0,450.431));});
