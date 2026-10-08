@@ -26,8 +26,7 @@ def main():
         if not meta:raise KeyError(session)
         data=pipeline_for(session).review(session)
         duration=max((r['start']+r['duration'] for r in data['recordings']),default=0)
-        with store.connect() as db:
-            rows=db.execute('SELECT extract(epoch FROM captured_at)-%s,payload::json FROM diting_metrics.samples WHERE run_id=%s AND captured_at>=to_timestamp(%s) AND captured_at<to_timestamp(%s) ORDER BY captured_at',(data['startedAtUnix'],meta['runId'],data['startedAtUnix'],data['startedAtUnix']+duration+15)).fetchall()
+        rows=store.sample_rows(meta,data['startedAtUnix'],duration)
         samples=[{'t':float(t),'value':r['metrics'].get('online',{}).get('value')} for t,r in rows if 0<=float(t)<duration]
         # Wait for the five-minute upload to cover the audio window before summarizing.
         ready=max((float(t)+15 for t,_ in rows),default=0) if session.startswith('live-') else duration
@@ -42,11 +41,14 @@ def main():
             self.close_connection=True
             if not self.authenticated():return self.reply(401,{'error':'authentication required'})
             if self.headers.get('Origin')!=os.environ['PUBLIC_BASE_URL']:return self.reply(403,{'error':'same-origin request required'})
-            if urlsplit(self.path).path!='/api/reviews':return self.reply(404,{'error':'not found'})
+            if urlsplit(self.path).path not in ('/api/reviews','/api/live/channels'):return self.reply(404,{'error':'not found'})
             try:
                 length=int(self.headers.get('Content-Length','0'))
                 if self.headers.get('Transfer-Encoding') or not 0<length<=100000 or self.headers.get('Content-Type','').split(';')[0]!='application/json':raise ValueError()
                 self.connection.settimeout(15);payload=json.loads(self.rfile.read(length))
+                if urlsplit(self.path).path=='/api/live/channels':
+                    channel=store.bind_channel(payload['teacher']);path=channel['id']
+                    return self.reply(200,{**channel,'server':'rtmps://live-ansys.ai.lab.yc345.tv:1936','streamKey':path+'?user=diting&pass='+stream_password(os.environ['STREAM_SIGNING_KEY'],path)})
                 session=payload.get('sessionId',default)
                 result=reviews.save_notes(session,payload['records'],review_data(session)['duration'])
                 return self.reply(200,{'notes':result})
@@ -57,6 +59,7 @@ def main():
             path=urlsplit(self.path).path
             if not self.authenticated():return self.reply(401,{'error':'authentication required'})
             try:
+                if path=='/api/live/channels':return self.reply(200,{'channels':store.channels()})
                 if path=='/api/live/runs':return self.reply(200,{'runs':store.runs()})
                 if path.startswith('/api/live/setup/'):
                     run=path.rsplit('/',1)[-1];teacher=store.teacher(run)

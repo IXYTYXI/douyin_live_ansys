@@ -42,3 +42,38 @@ class LiveTests(unittest.TestCase):
         self.assertEqual(continuation_offset(59.97,61.84),61.84)
         self.assertEqual(continuation_offset(62.2,61.84),61.84)
         self.assertEqual(continuation_offset(70,61.84),70)
+
+class ChannelTests(unittest.TestCase):
+    def test_fixed_channel_key_is_authorized_without_a_collector_run(self):
+        from backend.live import stream_path
+        channel='channel-9cc2845a-2307-43da-a4c3-48da19097548'
+        self.assertTrue(stream_path(channel))
+        p={'path':channel,'action':'publish','protocol':'rtmp','user':'diting','password':stream_password('secret',channel)}
+        self.assertTrue(valid_publish('secret',p))
+        self.assertFalse(valid_publish('secret',{**p,'path':channel+'x'}))
+
+    def test_reconnect_boundary_uses_media_time_not_import_time(self):
+        from backend.live import resume_session
+        self.assertTrue(resume_session(100,220))
+        self.assertFalse(resume_session(100,220.01))
+        self.assertFalse(resume_session(None,10))
+
+    def test_channel_segment_retry_reuses_session_and_finishes_before_removal(self):
+        import json,tempfile
+        from pathlib import Path
+        from unittest.mock import Mock
+        from backend.live_service import scan
+        with tempfile.TemporaryDirectory() as root:
+            folder=Path(root)/'channel-9cc2845a-2307-43da-a4c3-48da19097548';folder.mkdir()
+            source=folder/'1791420000-123456.mp4';source.write_bytes(b'video')
+            source.with_suffix('.ready').write_text(json.dumps({'path':str(source)}))
+            pipeline=Mock();pipeline.review.return_value={'recordings':[{'start':0,'duration':60}]}
+            store=Mock();store.register_segment.return_value={'id':'live-auto-id','started':1791420000.123456}
+            store.finish_segment.side_effect=RuntimeError('retry transaction')
+            scan(pipeline,store,Path(root))
+            self.assertTrue(source.exists())
+            store.finish_segment.side_effect=None
+            scan(pipeline,store,Path(root))
+            self.assertFalse(source.exists())
+            self.assertEqual(pipeline.ingest.call_args.args[0],'live-auto-id')
+            self.assertEqual(pipeline.ingest.call_args_list[0],pipeline.ingest.call_args_list[1])

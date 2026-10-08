@@ -4,7 +4,7 @@ from pathlib import Path
 from datetime import datetime,timezone
 from urllib.parse import urlsplit
 from .asr import CompanyASR
-from .live import LiveStore,valid_publish,segment_stamp,continuation_offset
+from .live import LiveStore,valid_publish,segment_stamp,continuation_offset,RECONNECT_SECONDS
 from .pipeline import Pipeline
 from .server import MediaSigner,make_server
 
@@ -27,15 +27,24 @@ def scan(pipeline,store,inbox):
             run=ready.parent.name;stamp=segment_stamp(source.name)
             # Earlier files exist even if their completion hook is delayed. Done markers preserve the origin.
             stamps=[segment_stamp(p.with_suffix('.mp4').name) for p in source.parent.iterdir() if p.suffix in ('.mp4','.ready','.done')]
-            start=store.register(run,min(stamps))
+            channel=run.startswith('channel-')
+            if channel:
+                assigned=store.register_segment(run,source.name,stamp)
+                sid=assigned['id'];start=assigned['started']
+            else:
+                start=store.register(run,min(stamps));sid='live-'+run
             if 'recordedAt' not in event:
-                try:previous=pipeline.review('live-'+run)['recordings']
+                try:previous=pipeline.review(sid)['recordings']
                 except KeyError:previous=[]
                 previous_end=max((r['start']+r['duration'] for r in previous),default=0)
                 offset=continuation_offset(stamp-start,previous_end) if previous else stamp-start
                 event['recordedAt']=iso(start+offset)
                 temporary=ready.with_suffix('.pending');temporary.write_text(json.dumps(event));temporary.replace(ready)
-            pipeline.ingest('live-'+run,iso(start),event['recordedAt'],source,45)
+            pipeline.ingest(sid,iso(start),event['recordedAt'],source,45)
+            if channel:
+                recordings=pipeline.review(sid)['recordings']
+                end=start+max(r['start']+r['duration'] for r in recordings)
+                store.finish_segment(run,source.name,end)
             ready.rename(ready.with_suffix('.done'))
             # Pipeline has an immutable hashed copy before the temporary input is removed.
             source.unlink()
@@ -45,9 +54,12 @@ def scan(pipeline,store,inbox):
         try:
             live=json.loads(state.read_text())['live'] is True
             # Do not close analysis until all finalized input segments are imported.
-            if not live and (list(state.parent.glob('*.ready')) or list(state.parent.glob('*.mp4')) or time.time()-json.loads(state.read_text())['at']<15):continue
+            if not live and (list(state.parent.glob('*.ready')) or list(state.parent.glob('*.mp4')) or time.time()-json.loads(state.read_text())['at']<(RECONNECT_SECONDS if state.parent.name.startswith('channel-') else 15)):continue
             with store.connect() as db:
-                db.execute('UPDATE diting_live.sessions SET live=%s WHERE run_id=%s',(live,state.parent.name))
+                if state.parent.name.startswith('channel-'):
+                    # Ready must not resurrect all historical sessions for a fixed channel.
+                    if not live:db.execute('UPDATE diting_live.sessions SET live=false WHERE channel_id=%s',(state.parent.name,))
+                else:db.execute('UPDATE diting_live.sessions SET live=%s WHERE run_id=%s',(live,state.parent.name))
         except Exception as e:print('Live status pending:',type(e).__name__,flush=True)
 
 
@@ -71,7 +83,7 @@ def main():
                 self.connection.settimeout(5)
                 payload=json.loads(self.rfile.read(n))
                 if not valid_publish(os.environ['STREAM_SIGNING_KEY'],payload):raise ValueError()
-                store.teacher(payload['path'])
+                store.channel_teacher(payload['path']) if payload['path'].startswith('channel-') else store.teacher(payload['path'])
                 return self.reply(200,{'ok':True})
             except Exception:return self.reply(401,{'error':'publish not authorized'})
         def do_GET(self):

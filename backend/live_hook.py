@@ -1,12 +1,12 @@
 """MediaMTX hooks persist completed segments; never inspect a growing recording."""
 import json,os,sys,time,uuid
 from pathlib import Path
-from .live import run_id,segment_stamp
+from .live import stream_path,segment_stamp
 
 
 def main():
     run=os.environ['MTX_PATH']
-    if not run_id(run):raise ValueError('invalid path')
+    if not stream_path(run):raise ValueError('invalid path')
     root=Path(os.environ['LIVE_INBOX']).resolve()
     folder=root/run;folder.mkdir(parents=True,exist_ok=True)
     kind=sys.argv[1]

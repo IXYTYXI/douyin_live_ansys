@@ -13,13 +13,24 @@ def run_id(value):
         return False
 
 
+RECONNECT_SECONDS=120
+
+
+def stream_path(value):
+    return run_id(value) or (isinstance(value,str) and value.startswith('channel-') and run_id(value[8:]))
+
+
+def resume_session(media_end, stamp):
+    return media_end is not None and stamp <= media_end + RECONNECT_SECONDS
+
+
 def stream_password(secret, run):
-    if not run_id(run):raise ValueError('invalid run')
+    if not stream_path(run):raise ValueError('invalid stream path')
     return hmac.new(secret.encode(),('publish:'+run).encode(),hashlib.sha256).hexdigest()
 
 
 def valid_publish(secret, payload):
-    return (isinstance(payload,dict) and run_id(payload.get('path')) and
+    return (isinstance(payload,dict) and stream_path(payload.get('path')) and
             payload.get('action')=='publish' and payload.get('protocol')=='rtmp' and
             payload.get('user')=='diting' and isinstance(payload.get('password'),str) and
             hmac.compare_digest(payload['password'],stream_password(secret,payload['path'])))
@@ -58,8 +69,57 @@ class LiveStore(MetricsStore):
 
     def sessions(self):
         with self.connect() as db:
-            rows=db.execute('SELECT id,run_id,teacher,started,live FROM diting_live.sessions ORDER BY started DESC').fetchall()
-        return [dict(zip(('id','runId','teacher','started','live'),r)) for r in rows]
+            rows=db.execute('SELECT id,run_id,teacher,started,live,channel_id FROM diting_live.sessions ORDER BY started DESC').fetchall()
+        return [dict(zip(('id','runId','teacher','started','live','channelId'),r)) for r in rows]
+
+    def channels(self):
+        with self.connect() as db:
+            rows=db.execute("SELECT teacher FROM diting_live.channels UNION SELECT DISTINCT payload::jsonb->>'teacher' FROM diting_metrics.samples ORDER BY 1").fetchall()
+        return [{'teacher':r[0]} for r in rows if r[0]]
+
+    def bind_channel(self, teacher):
+        if not isinstance(teacher,str) or not teacher.strip() or len(teacher)>60:raise ValueError('invalid teacher')
+        teacher=teacher.strip()
+        with self.connect() as db:
+            row=db.execute("INSERT INTO diting_live.channels(id,teacher) VALUES(%s,%s) ON CONFLICT(teacher) DO UPDATE SET teacher=EXCLUDED.teacher RETURNING id,teacher",('channel-'+str(uuid.uuid4()),teacher)).fetchone()
+        return {'id':row[0],'teacher':row[1]}
+
+    def channel_teacher(self, channel):
+        if not stream_path(channel) or not channel.startswith('channel-'):raise ValueError('invalid channel')
+        with self.connect() as db:
+            row=db.execute('SELECT teacher FROM diting_live.channels WHERE id=%s',(channel,)).fetchone()
+        if not row:raise ValueError('unknown channel')
+        return row[0]
+
+    def register_segment(self, channel, name, stamp):
+        # The channel row serializes session allocation; the file mapping makes retries idempotent.
+        with self.connect() as db:
+            teacher=db.execute('SELECT teacher FROM diting_live.channels WHERE id=%s FOR UPDATE',(channel,)).fetchone()
+            if not teacher:raise ValueError('unknown channel')
+            old=db.execute('SELECT s.id,s.started FROM diting_live.segments f JOIN diting_live.sessions s ON s.id=f.session_id WHERE f.channel_id=%s AND f.name=%s',(channel,name)).fetchone()
+            if old:return {'id':old[0],'started':old[1]}
+            prev=db.execute('SELECT id,started,media_end FROM diting_live.sessions WHERE channel_id=%s ORDER BY started DESC LIMIT 1',(channel,)).fetchone()
+            if prev and stamp<prev[1]:raise ValueError('out of order segment')
+            if prev and resume_session(prev[2],stamp):
+                sid,start=prev[:2]
+                db.execute('UPDATE diting_live.sessions SET live=true WHERE id=%s',(sid,))
+            else:
+                sid='live-'+str(uuid.uuid4());start=stamp
+                db.execute('UPDATE diting_live.sessions SET live=false WHERE channel_id=%s',(channel,))
+                db.execute('INSERT INTO diting_live.sessions(id,run_id,teacher,started,channel_id,media_end) VALUES(%s,%s,%s,%s,%s,%s)',(sid,sid[5:],teacher[0],start,channel,start))
+            db.execute('INSERT INTO diting_live.segments(channel_id,name,session_id) VALUES(%s,%s,%s)',(channel,name,sid))
+            return {'id':sid,'started':start}
+
+    def finish_segment(self, channel, name, end):
+        with self.connect() as db:
+            db.execute('UPDATE diting_live.sessions SET media_end=greatest(media_end,%s) WHERE id=(SELECT session_id FROM diting_live.segments WHERE channel_id=%s AND name=%s)',(end,channel,name))
+
+    def sample_rows(self, meta, start, duration):
+        with self.connect() as db:
+            if meta.get('channelId'):
+                # Late uploads and collector restarts join by bound teacher and capture time.
+                return db.execute("SELECT extract(epoch FROM captured_at)-%s,payload::json FROM diting_metrics.samples WHERE payload::jsonb->>'teacher'=%s AND captured_at>=to_timestamp(%s) AND captured_at<to_timestamp(%s) ORDER BY captured_at,seq",(start,meta['teacher'],start,start+duration+15)).fetchall()
+            return db.execute('SELECT extract(epoch FROM captured_at)-%s,payload::json FROM diting_metrics.samples WHERE run_id=%s AND captured_at>=to_timestamp(%s) AND captured_at<to_timestamp(%s) ORDER BY captured_at',(start,meta['runId'],start,start+duration+15)).fetchall()
 
 
 def continuation_offset(wall_offset, previous_end):

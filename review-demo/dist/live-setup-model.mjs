@@ -1,2 +1,2 @@
-export function runLabel(run){return `${run.teacher||'未命名主播'} · ${new Date(run.startedAt).toLocaleString('zh-CN')} · ${run.runId}`;}
-export function setupPath(runId){if(typeof runId!=='string'||!runId.trim())throw Error('请先选择采集批次');return '/api/live/setup/'+encodeURIComponent(runId);}
+export function channelTeachers(channels){return [...new Set(channels.map(c=>c.teacher).filter(t=>typeof t==='string'&&t.trim()))];}
+export function bindingBody(teacher){if(typeof teacher!=='string'||!teacher.trim()||teacher.trim().length>60)throw Error('请选择或填写主播名');return JSON.stringify({teacher:teacher.trim()});}

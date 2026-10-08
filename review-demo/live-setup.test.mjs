@@ -1,4 +1,4 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
-import * as setup from './dist/live-setup-model.mjs';
-test('live run choices require explicit selection and display identity plus time',()=>{assert.equal(typeof setup.runLabel,'function');assert.match(setup.runLabel({runId:'run-42',teacher:'王老师',startedAt:'2026-10-08T03:00:00Z'}),/王老师/);assert.match(setup.runLabel({runId:'run-42',teacher:'王老师',startedAt:'2026-10-08T03:00:00Z'}),/run-42/);});
-test('setup credential endpoint encodes only a selected run',()=>{assert.equal(typeof setup.setupPath,'function');assert.throws(()=>setup.setupPath(''));assert.equal(setup.setupPath('run/a'),'/api/live/setup/run%2Fa');});
+import {channelTeachers,bindingBody} from './dist/live-setup-model.mjs';
+test('collector restarts leave one stable teacher choice',()=>{assert.deepEqual(channelTeachers([{teacher:'王老师',runId:'a'},{teacher:'王老师',runId:'b'},{teacher:'李老师'}]),['王老师','李老师']);});
+test('first binding needs only a teacher, never a per-show task',()=>{assert.equal(bindingBody(' 王老师 '),'{"teacher":"王老师"}');assert.throws(()=>bindingBody(''));assert.throws(()=>bindingBody('字'.repeat(61)));});

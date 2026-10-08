@@ -46,6 +46,8 @@ def main():
     Pipeline(data,business='douyin_live',database_url=admin)
     with psycopg.connect(admin) as db:
         db.execute((ROOT/'backend/migrations/005_live.sql').read_text())
+        db.execute((ROOT/'backend/migrations/006_channels.sql').read_text())
+        db.execute('GRANT INSERT,UPDATE ON diting_live.channels TO diting_review_reader')
         if not db.execute('SELECT 1 FROM pg_roles WHERE rolname=%s',(role,)).fetchone():db.execute(sql.SQL('CREATE ROLE {} LOGIN').format(sql.Identifier(role)))
         db.execute(sql.SQL('ALTER ROLE {} PASSWORD {}').format(sql.Identifier(role),sql.Literal(password)))
         db.execute(sql.SQL('GRANT CONNECT ON DATABASE {} TO {}').format(sql.Identifier(dbname),sql.Identifier(role)))
@@ -68,7 +70,7 @@ def main():
          'hls':False,'webrtc':False,'srt':False,'moq':False,'api':False,'authMethod':'http','authHTTPAddress':'http://127.0.0.1:18778/auth','authHTTPExclude':[],
          'pathDefaults':{'overridePublisher':False,'record':True,'recordPath':str(inbox)+'/%path/%s-%f','recordFormat':'fmp4','recordPartDuration':'1s','recordSegmentDuration':'60s','recordDeleteAfter':'0s',
           'runOnReady':python+' -m backend.live_hook ready','runOnNotReady':python+' -m backend.live_hook stop','runOnRecordSegmentComplete':python+' -m backend.live_hook segment'},
-         'paths':{'~^[0-9a-f-]{36}$':{}}}
+         'paths':{'~^(channel-)?[0-9a-f-]{36}$':{}}}
     save('/etc/diting-mediamtx.json',json.dumps(cfg),0o644)
     common=f'''User=diting-review
 Group=diting-review
