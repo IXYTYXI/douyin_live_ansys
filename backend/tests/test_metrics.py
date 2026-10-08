@@ -48,6 +48,24 @@ class MetricsTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 store.accept(data)
 
+    def test_explicit_unknown_metric_passes_validation(self):
+        store = MetricsStore('postgresql://unused')
+        store.connect = Mock(side_effect=RuntimeError('validation passed'))
+        data = batch()
+        data['records'][0]['metrics']['shares'] = {'value': None, 'raw': None}
+        with self.assertRaisesRegex(RuntimeError, 'validation passed'):
+            store.accept(data)
+
+    def test_missing_or_non_numeric_metric_value_rejected(self):
+        store = MetricsStore('postgresql://unused')
+        store.connect = Mock(side_effect=AssertionError('must not access database'))
+        for metric in [{}, {'value': '1'}, {'value': True}, {'value': -1}]:
+            data = batch()
+            data['records'][0]['metrics']['shares'] = metric
+            with self.assertRaises(ValueError):
+                store.accept(data)
+        store.connect.assert_not_called()
+
     def test_http_ack_auth_conflict_and_query(self):
         with tempfile.TemporaryDirectory() as folder:
             store = Mock()

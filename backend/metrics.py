@@ -62,7 +62,12 @@ class MetricsStore:
                     continue
                 if not isinstance(metric, dict):
                     raise ValueError('invalid metric')
-                value = metric.get('value')
+                if 'value' not in metric:
+                    raise ValueError('missing metric value')
+                value = metric['value']
+                # A dash on the source page means unknown, not zero.
+                if value is None:
+                    continue
                 if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
                     raise ValueError('invalid metric value')
         payload = canonical(batch)
