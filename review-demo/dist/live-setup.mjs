@@ -6,7 +6,7 @@ async function refresh(){
  try{const response=await fetch('/api/live/channels',{cache:'no-store'});if(!response.ok)throw Error('主播读取失败，请重试');const data=await response.json();if(token!==epoch)return;
  $('teachers').replaceChildren(...channelTeachers(data.channels||[]).map(teacher=>{const option=document.createElement('option');option.value=teacher;return option;}));
  $('status').textContent='首次选择或填写与插件一致的主播名，获取固定配置。以后直接在 OBS 开始推流。';
- }catch(e){if(token===epoch)$('status').textContent=e.message;}finally{$('refresh').disabled=false;}
+ }catch(e){if(token===epoch)$('status').textContent=e.message;}finally{$('refresh').disabled=false;if(token===epoch)$('load').disabled=!$('teacher').value.trim();}
 }
 $('teacher').oninput=()=>{clearCredentials();$('load').disabled=!$('teacher').value.trim();};
 $('refresh').onclick=refresh;
