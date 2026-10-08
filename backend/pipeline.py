@@ -203,7 +203,7 @@ def normalize_utterances(result, duration):
         if not isinstance(item,dict): return []
         start,end=item.get('start_time'),item.get('end_time')
         if any(type(v) not in (int,float) or not math.isfinite(v) for v in (start,end)): return []
-        if start<0 or end<=start or end>duration*1000+100 or start<previous: return []
+        if start<0 or start>=duration*1000 or end<=start or end>duration*1000+100 or start<previous: return []
         if not isinstance(item.get('text'),str): return []
         output.append({'start':start/1000,'end':min(duration,end/1000),'text':item['text'],'speaker':item.get('speaker') if isinstance(item.get('speaker'),str) else None})
         previous=start

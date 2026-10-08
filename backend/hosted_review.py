@@ -60,6 +60,7 @@ def main():
             path=urlsplit(self.path).path
             if not self.authenticated():return self.reply(401,{'error':'authentication required'})
             try:
+                if path=='/health':return self.reply(200,{'ok':True})
                 if path=='/api/collection-status':return self.reply(200,collection_status(store))
                 if path=='/api/live/channels':return self.reply(200,{'channels':store.channels()})
                 if path=='/api/live/runs':return self.reply(200,{'runs':store.runs()})
