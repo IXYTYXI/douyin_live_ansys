@@ -116,16 +116,42 @@ def validate_output(output, payload):
     return output
 
 
+def stream_content(lines):
+    """Read standard Chat Completions SSE; reject transport/length truncation."""
+    parts=[];size=0;finished=False;started=time.monotonic()
+    for raw in lines:
+        if time.monotonic()-started>600:raise TimeoutError('analysis stream deadline')
+        line=raw.decode('utf-8').strip()
+        if not line.startswith('data:'):continue
+        message=line[5:].strip()
+        if message=='[DONE]':finished=True;break
+        chunk=json.loads(message)
+        if 'error' in chunk:raise ValueError('analysis stream error')
+        for choice in chunk.get('choices',[]):
+            if choice.get('index',0)!=0:continue
+            reason=choice.get('finish_reason')
+            if reason and reason!='stop':raise ValueError('analysis output incomplete')
+            if reason=='stop':finished=True
+            text=choice.get('delta',{}).get('content') or ''
+            if not isinstance(text,str):raise ValueError('invalid analysis stream')
+            size+=len(text)
+            if size>80000:raise ValueError('analysis output too large')
+            parts.append(text)
+    if not finished or not parts:raise ValueError('analysis stream interrupted')
+    return ''.join(parts)
+
+
 def generate(payload, env):
     source=json.dumps(payload,ensure_ascii=False,separators=(',',':'))
     # Fail visibly rather than silently dropping the latter part of a long stream.
     if len(source)>400000:raise ValueError('analysis input requires hierarchical processing')
-    body={'model':env['SUMMARY_MODEL'],'messages':[{'role':'system','content':SYSTEM},{'role':'user','content':source}]}
+    body={'model':env['SUMMARY_MODEL'],'stream':True,'messages':[{'role':'system','content':SYSTEM},{'role':'user','content':source}]}
     req=urllib.request.Request(env['SUMMARY_BASE_URL'].rstrip('/')+'/chat/completions',
           data=json.dumps(body,ensure_ascii=False).encode(),headers={'Authorization':'Bearer '+env['SUMMARY_API_KEY'],
           'Content-Type':'application/json','User-Agent':'Diting-Session-Analysis/1'})
-    with urllib.request.urlopen(req,timeout=240) as response:result=json.load(response)
-    content=result['choices'][0]['message']['content'].strip()
+    with urllib.request.urlopen(req,timeout=240) as response:
+        content=stream_content(response) if 'text/event-stream' in response.headers.get('Content-Type','') else json.load(response)['choices'][0]['message']['content']
+    content=content.strip()
     if content.startswith('```'):content=content.split('\n',1)[1].rsplit('```',1)[0].strip()
     return validate_output(json.loads(content),payload)
 

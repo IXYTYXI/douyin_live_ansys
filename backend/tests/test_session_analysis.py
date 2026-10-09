@@ -1,4 +1,5 @@
 import copy
+import json
 import unittest
 from backend.session_analysis import build_payload, validate_output, analysis_row, waiting_reason, input_hash
 
@@ -52,6 +53,13 @@ class AnalysisTests(unittest.TestCase):
         from urllib.error import HTTPError
         from backend.session_analysis import error_label
         self.assertEqual(error_label(HTTPError('https://private',502,'secret',{},None)),'HTTPError:502')
+    def test_streaming_response_and_truncation(self):
+        from backend.session_analysis import stream_content
+        line=lambda choice:('data: '+json.dumps({'choices':[choice]})+'\n').encode()
+        chunks=[b': keepalive\n',line({'delta':{'content':'内容'},'finish_reason':None}),line({'delta':{},'finish_reason':'stop'}),b'data: [DONE]\n']
+        self.assertEqual(stream_content(chunks),'内容')
+        with self.assertRaises(ValueError):stream_content(chunks[:2])
+        with self.assertRaises(ValueError):stream_content([line({'delta':{'content':'截断'},'finish_reason':'length'})])
     def test_projection_never_writes_human_review(self):
         d=self.data();row=analysis_row(d,{'status':'done','payload':build_payload(d),'output':{'overview':'概览','events':[],'advice':'建议','limitations':'局限'},'generatedAt':2000},'https://review.test')
         self.assertNotIn('运营复核',row);self.assertEqual(row['同步键'],d['id'])
