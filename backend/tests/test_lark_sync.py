@@ -13,6 +13,23 @@ class Fake:
 class SyncTests(unittest.TestCase):
     def data(self):
         return {'id':'live-a','teacher':'主播','startedAtUnix':1000,'duration':600,'live':True,'samples':[{'t':1,'value':0}], 'segments':[], 'summaries':[{'start':0,'end':600,'status':'done','fields':{'periodTheme':'主题','keywords':['词'],'conclusion':'AI'}}], 'notes':[{'scope':'range','start':0,'end':600,'fields':{'conclusion':'人工时段'}}], 'collectionStatus':{'readiness':{'state':'live','label':'直播中','reasons':[]}}}
+    def test_sample_metrics_keep_zero_missing_and_approximation(self):
+        from backend.lark_sync import sample_fields
+        fields=sample_fields({'value':12,'metrics':{'likes':{'value':1200,'approximate':True},'shares':{'value':0},'newFollowers':{'value':True}}})
+        self.assertEqual(fields['在线人数'],12)
+        self.assertEqual(fields['点赞次数'],1200)
+        self.assertEqual(fields['分享次数'],0)
+        self.assertIsNone(fields['新增粉丝'])
+        self.assertIsNone(fields['送礼人数'])
+        self.assertEqual(fields['近似值指标'],'点赞次数')
+    def test_metric_backfill_updates_existing_key_once(self):
+        from backend.lark_sync import sample_fields
+        c=Fake();state={};row={'同步键':'a','在线人数':12}
+        sync_rows(c,'samples',[row],state,'old')
+        changed={'同步键':'a',**sample_fields({'value':12,'metrics':{'likes':{'value':200}}})}
+        sync_rows(c,'samples',[changed],state,'now')
+        self.assertEqual(len(c.rows),1);self.assertEqual(c.writes,2)
+        sync_rows(c,'samples',[changed],state,'later');self.assertEqual(c.writes,2)
     def test_zero_is_real_value_not_missing(self):
         s,p=project(self.data(),'https://review.test');self.assertEqual(s['在线均值'],0);self.assertEqual(p[0]['在线峰值'],0)
     def test_missing_is_null(self):

@@ -8,7 +8,7 @@ import time
 import urllib.request
 from datetime import datetime
 from pathlib import Path
-from .lark_sync import LarkCLI, project, sync_rows, date_text
+from .lark_sync import LarkCLI, project, sync_rows, date_text, sample_fields
 
 
 def atomic_json(path, value):
@@ -50,7 +50,7 @@ def collect(config, env):
             payload=json.loads(payload) if isinstance(payload,str) else payload
             if not data.get('channelId') and payload.get('runId')!=data.get('runId'):continue
             value=payload.get('metrics',{}).get('online',{}).get('value')
-            data['rawSamples'].append({'id':rid,'captured':captured.timestamp(),'received':received.timestamp(),'value':value})
+            data['rawSamples'].append({'id':rid,'captured':captured.timestamp(),'received':received.timestamp(),'value':value,'metrics':payload.get('metrics',{})})
         result.append(data)
     return result
 
@@ -69,7 +69,7 @@ def synchronize(config, snapshots, state, client):
         samples=[{'采样':data['teacher']+' · '+date_text(s['captured']),
                   '同步键':data['id']+':'+s['id'],'主播':data['teacher'],
                   '采样时间':date_text(s['captured']),'接收时间':date_text(s['received']),
-                  '在线人数':s['value'],'所属场次':parent} for s in data.get('rawSamples',[])]
+                  **sample_fields(s),'所属场次':parent} for s in data.get('rawSamples',[])]
         if samples:
             client.validate_fields(config['tables']['samples'],list(samples[0])+['最近同步时间'])
             sync_rows(client,config['tables']['samples'],samples,state,now)

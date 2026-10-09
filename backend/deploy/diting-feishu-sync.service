@@ -7,5 +7,5 @@ Type=oneshot
 WorkingDirectory=/data/vonjan/program/douyin_live_ansys
 ExecStart=/data/vonjan/program/douyin_live_ansys/.venv-review/bin/python -m backend.lark_sync_service --config /etc/diting-feishu-sync.json
 UMask=0077
-TimeoutStartSec=240
+TimeoutStartSec=1800
 Nice=10

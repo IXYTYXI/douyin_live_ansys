@@ -7,8 +7,25 @@ import subprocess
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from .readiness import metric_gaps
+from .metric_projection import review_samples
 
 TZ = ZoneInfo('Asia/Shanghai')
+
+
+METRIC_FIELDS = {'online':'在线人数', 'likes':'点赞次数', 'commentUsers':'评论人数',
+                 'newFollowers':'新增粉丝', 'shares':'分享次数', 'giftUsers':'送礼人数',
+                 'fanClubJoins':'加粉丝团', 'previewOnline':'预览流看播'}
+
+
+def sample_fields(sample):
+    source = dict(sample.get('metrics') or {})
+    if 'online' not in source:
+        source['online'] = {'value': sample.get('value')}
+    metrics = review_samples([(0, {'metrics': source})], 1)[0]['metrics']
+    fields = {label: metrics.get(key, {}).get('value') for key,label in METRIC_FIELDS.items()}
+    fields['近似值指标'] = '、'.join(label for key,label in METRIC_FIELDS.items()
+        if metrics.get(key, {}).get('approximate') and fields[label] is not None) or None
+    return fields
 
 
 def date_text(seconds):
