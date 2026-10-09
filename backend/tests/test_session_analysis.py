@@ -26,12 +26,19 @@ class AnalysisTests(unittest.TestCase):
         d=self.data();d['samples']=d['samples'][:1];d['segments'][0]['end']=10
         p=build_payload(d);self.assertEqual(p['coverage']['transcriptGaps'],[[10,30]])
         self.assertEqual(p['metrics']['在线人数']['gaps'],[[10,30]])
-    def test_quote_and_time_must_be_supported(self):
-        p=build_payload(self.data());out={'overview':'概览','events':[{'start':0,'end':10,'observation':'观察','quote':'分数应用题','hypothesis':'待验证'}],'advice':'建议','limitations':'局限'}
-        self.assertEqual(validate_output(out,p),out)
-        for patch in ({'end':31},{'start':10,'end':5},{'quote':'不存在的内容'}):
+    def test_ai_cannot_choose_a_different_quote_or_timestamp(self):
+        p=build_payload(self.data());event=p['eventCandidates'][0]
+        out={'overview':'概览','events':[{'id':event['id'],'hypothesis':'待验证'}],'advice':'建议','limitations':'局限'}
+        checked=validate_output(out,p)
+        self.assertEqual(checked['events'][0]['quote'],event['sourceText'])
+        self.assertIn('今天讲分数应用题。',checked['events'][0]['quote'])
+        self.assertEqual(checked['events'][0]['observation'],event['observation'])
+        for patch in ({'id':'999'},{'quote':'别处原文'},{'start':100}):
             bad=copy.deepcopy(out);bad['events'][0].update(patch)
             with self.assertRaises(ValueError):validate_output(bad,p)
+    def test_candidates_exclude_changes_without_transcript(self):
+        d=self.data();d['segments'][0]['text']=''
+        self.assertEqual(build_payload(d)['eventCandidates'],[])
     def test_late_data_changes_hash_but_transport_metadata_does_not(self):
         d=self.data();p=build_payload(d);h=input_hash(p,'model')
         d['recordings'][0]['url']='sensitive';d['checkedAt']=999
