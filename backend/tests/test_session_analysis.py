@@ -42,6 +42,16 @@ class AnalysisTests(unittest.TestCase):
         d['live']=True;self.assertIsNotNone(waiting_reason(d,2000))
         d['live']=False;d['segments'][0]['state']='queued';self.assertIsNotNone(waiting_reason(d,2000))
         d['segments'][0]['state']='done';self.assertIsNotNone(waiting_reason(d,1050))
+    def test_compact_minutes_preserve_all_observed_values(self):
+        p=build_payload(self.data());row=p['minuteEvidence'][0]
+        labels=p['minuteMetricOrder'];cols=p['minuteColumns']
+        likes=dict(zip(cols,row['values'][labels.index('点赞次数')]))
+        self.assertEqual(likes,{'count':3,'first':100,'last':2,'min':2,'max':120,'sampleMean':None})
+        self.assertIsNone(row['values'][labels.index('分享次数')])
+    def test_http_errors_keep_status_without_response_secrets(self):
+        from urllib.error import HTTPError
+        from backend.session_analysis import error_label
+        self.assertEqual(error_label(HTTPError('https://private',502,'secret',{},None)),'HTTPError:502')
     def test_projection_never_writes_human_review(self):
         d=self.data();row=analysis_row(d,{'status':'done','payload':build_payload(d),'output':{'overview':'概览','events':[],'advice':'建议','limitations':'局限'},'generatedAt':2000},'https://review.test')
         self.assertNotIn('运营复核',row);self.assertEqual(row['同步键'],d['id'])

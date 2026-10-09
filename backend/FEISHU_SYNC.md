@@ -17,7 +17,7 @@
 
 ## 整场 AI 分析（可选第四表）
 
-配置 `tables.analysis` 为已创建的“整场 AI 分析”表 ID 后启用；先执行新增迁移 `backend/migrations/008_session_analysis.sql`。结果和输入证据保存在 PostgreSQL `diting_review.session_analyses`，不改写原总结或运营笔记。复用现有 SUMMARY_BASE_URL/MODEL/API_KEY。无此配置时保持原三表同步行为。
+配置 `tables.analysis` 为已创建的“整场 AI 分析”表 ID 后启用；先用部署管理员执行 `python -m backend.deploy.upgrade_session_analysis`（应用新增迁移 `backend/migrations/008_session_analysis.sql`，只授予新表读写权限）。结果和输入证据保存在 PostgreSQL `diting_review.session_analyses`，不改写原总结或运营笔记。复用现有 SUMMARY_BASE_URL/MODEL/API_KEY。无此配置时保持原三表同步行为。
 
 停播至少5分钟且已登记 ASR 任务全部完成/失败后生成；失败片段、采集结束未核验、录像/指标/转写缺失均明确标注。综合全部可用转写、8项指标的每分钟证据、10分钟总结和网页运营笔记；输入超40万字符显式失败，不静默截断。数值由代码计算，累计快照不求和，累计回落时不输出净增。均值是采样均值，不代表完整时间均值。AI 的相关性推测需人工核验；引用须匹配对应时间的转写原文。
 
