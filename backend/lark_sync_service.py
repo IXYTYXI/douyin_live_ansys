@@ -77,6 +77,23 @@ def synchronize(config, snapshots, state, client):
     return report
 
 
+def sync_analyses(config, snapshots, state, client, env):
+    if not config['tables'].get('analysis'):return []
+    from .session_analysis import ensure_analysis, analysis_row
+    table=config['tables']['analysis'];report=[]
+    parents=client.index(config['tables']['sessions'])
+    for data in snapshots:
+        try:result=ensure_analysis(data,env)
+        except Exception as exc:
+            result={'status':'分析暂不可用，需检查（'+type(exc).__name__+'）'}
+        row=analysis_row(data,result,config['public_url'])
+        row['所属场次']=[{'id':parents[data['id']]}]
+        client.validate_fields(table,list(row)+['最近同步时间'])
+        sync_rows(client,table,[row],state,date_text(time.time()))
+        report.append({'session':data['id'],'status':result['status']})
+    return report
+
+
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--config',required=True)
     parser.add_argument('--env-file',default='/etc/diting-review.env')
@@ -93,10 +110,12 @@ def main():
             # Apply scope also to imported snapshots, not only HTTP source discovery.
             snapshots=[d for d in snapshots if d['teacher'] in config['teachers'] and
                        d['startedAtUnix']>=datetime.fromisoformat(config['since'].replace('Z','+00:00')).timestamp()]
-            report=synchronize(config,snapshots,state,LarkCLI(config['base_token'],config.get('lark_cli','lark-cli')))
+            client=LarkCLI(config['base_token'],config.get('lark_cli','lark-cli'))
+            report=synchronize(config,snapshots,state,client)
+            analyses=sync_analyses(config,snapshots,state,client,read_env(args.env_file)) if not args.snapshot else []
             atomic_json(state_path,state)
-            atomic_json(state_path.with_name('status.json'),{'ok':True,'checkedAt':time.time(),'sessions':report})
-            print(json.dumps({'ok':True,'sessions':report},ensure_ascii=False))
+            atomic_json(state_path.with_name('status.json'),{'ok':True,'checkedAt':time.time(),'sessions':report,'analyses':analyses})
+            print(json.dumps({'ok':True,'sessions':report,'analyses':analyses},ensure_ascii=False))
         except Exception as exc:
             # Remote keys are reconciled again on next invocation; no false success checkpoint.
             atomic_json(state_path.with_name('status.json'),{'ok':False,'checkedAt':time.time(),'errorType':type(exc).__name__})

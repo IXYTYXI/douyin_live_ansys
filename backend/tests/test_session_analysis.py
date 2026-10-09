@@ -1,0 +1,50 @@
+import copy
+import unittest
+from backend.session_analysis import build_payload, validate_output, analysis_row, waiting_reason, input_hash
+
+class AnalysisTests(unittest.TestCase):
+    def data(self):
+        return {'id':'live-test','teacher':'测试夹具','startedAtUnix':1000,'duration':30,'live':False,
+          'collectorConfirmed':True,'samples':[
+            {'t':0,'value':0,'metrics':{'online':{'value':0},'likes':{'value':100}}},
+            {'t':10,'value':2,'metrics':{'online':{'value':2},'likes':{'value':120}}},
+            {'t':20,'value':4,'metrics':{'online':{'value':4},'likes':{'value':2}}}],
+          'recordings':[{'start':0,'duration':30}],
+          'segments':[{'start':0,'end':30,'state':'done','text':'今天讲分数应用题。'}],
+          'notes':[],'summaries':[]}
+    def test_counts_not_summed_and_reset_not_reported_as_growth(self):
+        p=build_payload(self.data());m=p['metrics']['点赞次数']
+        self.assertEqual(m['first']['value'],100);self.assertEqual(m['last']['value'],2)
+        self.assertIsNone(m['observedChange']);self.assertEqual(m['decreases'],1)
+        self.assertNotIn('sum',m)
+    def test_missing_is_not_zero_and_mean_is_sample_mean(self):
+        p=build_payload(self.data());self.assertEqual(p['metrics']['在线人数']['sampleMean'],2)
+        self.assertEqual(p['metrics']['分享次数']['count'],0)
+        self.assertEqual(p['metrics']['分享次数']['gaps'],[[0,30]])
+    def test_gap_and_partial_transcript_are_explicit(self):
+        d=self.data();d['samples']=d['samples'][:1];d['segments'][0]['end']=10
+        p=build_payload(d);self.assertEqual(p['coverage']['transcriptGaps'],[[10,30]])
+        self.assertEqual(p['metrics']['在线人数']['gaps'],[[10,30]])
+    def test_quote_and_time_must_be_supported(self):
+        p=build_payload(self.data());out={'overview':'概览','events':[{'start':0,'end':10,'observation':'观察','quote':'分数应用题','hypothesis':'待验证'}],'advice':'建议','limitations':'局限'}
+        self.assertEqual(validate_output(out,p),out)
+        for patch in ({'end':31},{'start':10,'end':5},{'quote':'不存在的内容'}):
+            bad=copy.deepcopy(out);bad['events'][0].update(patch)
+            with self.assertRaises(ValueError):validate_output(bad,p)
+    def test_late_data_changes_hash_but_transport_metadata_does_not(self):
+        d=self.data();p=build_payload(d);h=input_hash(p,'model')
+        d['recordings'][0]['url']='sensitive';d['checkedAt']=999
+        self.assertEqual(h,input_hash(build_payload(d),'model'))
+        d['samples'][0]['metrics']['likes']['value']=101
+        self.assertNotEqual(h,input_hash(build_payload(d),'model'))
+    def test_no_generation_while_live_or_transcribing(self):
+        d=self.data();self.assertIsNone(waiting_reason(d,2000))
+        d['live']=True;self.assertIsNotNone(waiting_reason(d,2000))
+        d['live']=False;d['segments'][0]['state']='queued';self.assertIsNotNone(waiting_reason(d,2000))
+        d['segments'][0]['state']='done';self.assertIsNotNone(waiting_reason(d,1050))
+    def test_projection_never_writes_human_review(self):
+        d=self.data();row=analysis_row(d,{'status':'done','payload':build_payload(d),'output':{'overview':'概览','events':[],'advice':'建议','limitations':'局限'},'generatedAt':2000},'https://review.test')
+        self.assertNotIn('运营复核',row);self.assertEqual(row['同步键'],d['id'])
+        self.assertIn('回落',row['指标表现']);self.assertIn('缺失',row['数据说明'])
+
+if __name__=='__main__':unittest.main()
