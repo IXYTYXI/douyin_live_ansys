@@ -67,6 +67,13 @@ class AnalysisTests(unittest.TestCase):
         self.assertEqual(stream_content(chunks),'内容')
         with self.assertRaises(ValueError):stream_content(chunks[:2])
         with self.assertRaises(ValueError):stream_content([line({'delta':{'content':'截断'},'finish_reason':'length'})])
+    def test_business_terms_do_not_change_source_quotes(self):
+        from backend.session_analysis import business_output
+        original={'overview':'概览','advice':'建议','limitations':'指标为分钟采样，humanNotes为空',
+                  'events':[{'quote':'原文humanNotes','hypothesis':'eventCandidates'}]}
+        out=business_output(original)
+        self.assertIn('每10秒',out['limitations']);self.assertNotIn('humanNotes',out['limitations'])
+        self.assertEqual(out['events'][0]['quote'],original['events'][0]['quote'])
     def test_projection_never_writes_human_review(self):
         d=self.data();row=analysis_row(d,{'status':'done','payload':build_payload(d),'output':{'overview':'概览','events':[],'advice':'建议','limitations':'局限'},'generatedAt':2000},'https://review.test')
         self.assertNotIn('运营复核',row);self.assertEqual(row['同步键'],d['id'])

@@ -156,7 +156,15 @@ def validate_output(output, payload):
         seen.add(key);c=candidates[key]
         events.append({'start':c['start'],'end':c['end'],'observation':c['observation'],
                        'quote':c['sourceText'],'hypothesis':event['hypothesis']})
-    return {**output,'events':events}
+    return business_output({**output,'events':events})
+
+
+def business_output(output):
+    """Normalize display terminology without ever editing transcript quotations."""
+    def text(value):
+        return value.replace('指标为分钟采样','原始指标约每10秒采样，按分钟聚合用于分析').replace('humanNotes','人工运营笔记').replace('periodSummaries','时段AI总结').replace('eventCandidates','已核验事件证据')
+    return {**output,**{k:text(output[k]) for k in ('overview','advice','limitations')},
+            'events':[{**e,'hypothesis':text(e['hypothesis'])} for e in output['events']]}
 
 
 def stream_content(lines):
@@ -222,7 +230,10 @@ def ensure_analysis(data, env):
             row=db.execute('SELECT input_hash,status,output,attempts,extract(epoch FROM next_at),extract(epoch FROM generated_at) FROM diting_review.session_analyses WHERE session_id=%s',(data['id'],)).fetchone()
             attempts=0
             if row and row[0]==fingerprint:
-                if row[1]=='done':return {'status':'done','payload':payload,'output':row[2],'generatedAt':float(row[5])}
+                if row[1]=='done':
+                    output=business_output(row[2])
+                    if output!=row[2]:db.execute('UPDATE diting_review.session_analyses SET output=%s WHERE session_id=%s',(Jsonb(output),data['id']))
+                    return {'status':'done','payload':payload,'output':output,'generatedAt':float(row[5])}
                 attempts=row[3]
                 if attempts>=3 or float(row[4])>now:
                     return {'status':'生成失败，需检查' if attempts>=3 else '生成失败，等待重试','payload':payload}
@@ -248,6 +259,9 @@ def analysis_row(data, analysis, public_url):
     notes=[];performance=[]
     if payload:
         c=payload['coverage']
+        empty=[s for s in payload['transcript'] if not s['text'].strip()]
+        notes.append('原始指标约每10秒采样；分钟数据仅用于聚合分析')
+        if empty:notes.append(f'空转写{len(empty)}段；空文本不等于音频丢失，需回放核验是否无语音')
         if c['recordingGaps']:notes.append('录像有缺口')
         if c['transcriptGaps']:notes.append('转写有缺口')
         if c['asrFailed']:notes.append(f"转写失败{c['asrFailed']}段")
@@ -263,7 +277,7 @@ def analysis_row(data, analysis, public_url):
             elif m['observedChange'] is not None:text+=f"；采集首末差{m['observedChange']}（非整场总量）"
             if m['approximateCount']:text+=f"；含{m['approximateCount']}个近似值"
             performance.append(text)
-    if status=='done':status='已生成（有缺失或待核验项）' if notes else '已生成'
+    if status=='done':status='已生成（有缺失或待核验项）' if len(notes)>1 else '已生成'
     events=out.get('events',[])
     stamp=lambda s:date_text(data['startedAtUnix']+s)[11:]
     return {'分析':data['teacher']+' · '+date_text(data['startedAtUnix']), '同步键':data['id'],
