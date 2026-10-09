@@ -18,7 +18,43 @@ function noteRecordKey(r,s){return r.scope==='session'?`${s.id}:whole`:draftKey(
 function hydrateNotes(s=apiSession){for(const r of s?.notes||[]){const k=noteRecordKey(r,s);if(!dirtyKeys.has(k))drafts[k]={...r.fields,version:r.version,savedAt:r.savedAt};}}
 if(apiSession?.databaseReviews){for(const k of Object.keys(drafts))if(k.startsWith(apiSession.id+':'))delete drafts[k];hydrateNotes();}
 const tagValues={keywords:[]};
-function sessionOptions(){const rows=formal?sessionList:sessions;$('session').replaceChildren(...rows.map((s,i)=>{const o=document.createElement('option');o.value=formal?s.id:i;o.textContent=formal?`${s.teacher} · ${new Date(s.startedAt).toLocaleString('zh-CN')} · ${s.live?'直播中':'回放'}`:`${s.teacher} · ${s.course}${s.source==='backend-test'?'（模拟联调）':s.source?'（真实测试）':'（模拟）'}`;return o;}));$('session').value=formal?(apiSession?.sessionId||''):si;}
+// Keep the native select as the single selection value; render a consistent popup over it.
+const sessionPicker=document.createElement('div');sessionPicker.className='session-picker';
+const sessionToggle=document.createElement('button');sessionToggle.type='button';sessionToggle.className='session-toggle';sessionToggle.id='session-toggle';sessionToggle.setAttribute('aria-haspopup','listbox');sessionToggle.setAttribute('aria-expanded','false');sessionToggle.setAttribute('aria-controls','session-menu');
+const sessionMenu=document.createElement('div');sessionMenu.id='session-menu';sessionMenu.className='session-menu';sessionMenu.setAttribute('role','listbox');sessionMenu.setAttribute('aria-label','选择直播场次');sessionMenu.hidden=true;
+$('session').hidden=true;$('session').before(sessionPicker);sessionPicker.append(sessionToggle,sessionMenu);document.querySelector('label[for="session"]').htmlFor='session-toggle';
+function closeSessionMenu(focus=false){sessionMenu.hidden=true;sessionToggle.setAttribute('aria-expanded','false');if(focus)sessionToggle.focus();}
+function openSessionMenu(){if($('session').disabled)return;sessionOptions();sessionMenu.hidden=false;sessionToggle.setAttribute('aria-expanded','true');(sessionMenu.querySelector('[aria-selected="true"]')||sessionMenu.firstElementChild)?.focus();}
+sessionToggle.onclick=()=>sessionMenu.hidden?openSessionMenu():closeSessionMenu();
+sessionToggle.onkeydown=e=>{if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();openSessionMenu();}};
+sessionMenu.onkeydown=e=>{const items=[...sessionMenu.children],i=items.indexOf(document.activeElement);let next;
+ if(e.key==='Escape'){e.preventDefault();closeSessionMenu(true);return;}
+ if(e.key==='ArrowDown')next=Math.min(i+1,items.length-1);if(e.key==='ArrowUp')next=Math.max(0,i-1);if(e.key==='Home')next=0;if(e.key==='End')next=items.length-1;
+ if(next!==undefined){e.preventDefault();items[next]?.focus();}
+};
+document.addEventListener('click',e=>{if(!sessionPicker.contains(e.target))closeSessionMenu();});
+sessionPicker.addEventListener('focusout',e=>{if(!sessionPicker.contains(e.relatedTarget))closeSessionMenu();});
+function sessionOptions(){
+ const rows=formal?sessionList:sessions;
+ $('session').replaceChildren(...rows.map((s,i)=>{const o=document.createElement('option');o.value=formal?s.id:i;o.textContent=s.teacher;return o;}));
+ $('session').value=formal?(apiSession?.sessionId||''):si;
+ // Polling must not replace the focused menu while the user is choosing.
+ sessionToggle.disabled=$('session').disabled;
+ if(!sessionMenu.hidden)return;
+ sessionMenu.replaceChildren(...rows.map((s,i)=>{
+  const value=String(formal?s.id:i),chosen=value===$('session').value;
+  const date=formal?new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(s.startedAt)):s.course;
+  const status=formal?(s.live?'直播中':'回放'):(s.source==='backend-test'?'模拟联调':s.source?'测试':'模拟');
+  const item=document.createElement('button');item.type='button';item.className='session-option';item.setAttribute('role','option');item.setAttribute('aria-selected',String(chosen));item.tabIndex=-1;item.title=s.teacher+' · '+date+' · '+status;
+  const name=document.createElement('span');name.className='session-option-name';name.textContent=s.teacher;
+  const meta=document.createElement('span');meta.className='session-option-meta';meta.textContent=date+' · '+status;
+  item.append(name,meta);item.onclick=()=>{if($('session').disabled)return;closeSessionMenu(true);$('session').value=value;$('session').dispatchEvent(new Event('change',{bubbles:true}));sessionToggle.disabled=$('session').disabled;sessionToggle.textContent=s.teacher;sessionToggle.title=item.title;};
+  if(chosen){sessionToggle.textContent=s.teacher;sessionToggle.title=item.title;}
+  return item;
+ }));
+ if(!rows.length)sessionToggle.textContent='暂无直播';
+}
+
 sessionOptions();
 if(hosted){const link=document.createElement('a');link.href='/live-setup';link.textContent='OBS 直播接入';link.className='muted';document.querySelector('.page-title').append(link);}
 const session=()=>sessions[si],bounds=()=>selection(session(),top,step,index),key=()=>draftKey(session().id,...bounds()),noteKey=()=>scope==='range'?key():`${session().id}:whole`;
