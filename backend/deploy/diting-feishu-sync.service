@@ -2,6 +2,7 @@
 Description=Diting one-way Feishu business mirror
 After=network-online.target diting-review.service
 [Service]
+User=root
 Type=oneshot
 WorkingDirectory=/data/vonjan/program/douyin_live_ansys
 ExecStart=/data/vonjan/program/douyin_live_ansys/.venv-review/bin/python -m backend.lark_sync_service --config /etc/diting-feishu-sync.json
