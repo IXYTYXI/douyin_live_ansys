@@ -5,6 +5,7 @@ from datetime import datetime,timezone
 from urllib.parse import urlsplit
 from .pipeline import Pipeline
 from .metrics import Conflict
+from .metric_projection import review_samples
 from .reviews import ReviewStore
 from .live import LiveStore,stream_password
 from .summary_worker import cycle
@@ -29,7 +30,7 @@ def main():
         data=pipeline_for(session).review(session)
         duration=max((r['start']+r['duration'] for r in data['recordings']),default=0)
         rows=store.sample_rows(meta,data['startedAtUnix'],duration)
-        samples=[{'t':float(t),'value':r['metrics'].get('online',{}).get('value')} for t,r in rows if 0<=float(t)<duration]
+        samples=review_samples(rows,duration)
         run_ids=list({r['runId'] for _,r in rows})
         with store.connect() as db:
             ends=dict(db.execute('SELECT run_id,verified FROM diting_metrics.run_ends WHERE run_id=ANY(%s)',(run_ids,)).fetchall())
