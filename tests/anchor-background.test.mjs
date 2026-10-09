@@ -25,3 +25,27 @@ test('upload settings require popup and explicit destination permission',async()
  saved.batch={batchId:'pending'};
  assert.equal((await call({...message,url:'https://other.example/api/metrics/batches'})).ok,false);
 });
+
+test('confirmed end seals once; blank page and mismatched account never seal',async()=>{
+ saved={};await call({type:'START',teacher:'老师'});
+ const realNow=Date.now;let now=realNow();Date.now=()=>now;
+ const m={type:'SAMPLE',header:'老师',metricText:'',visible:true,platformEnded:true};
+ try{
+  await call({...m,platformEnded:false},page);assert.equal(saved.settings.enabled,true);
+  await call({...m,header:'其他人'},page);now+=10000;
+  await call(m,page);assert.equal(saved.settings.enabled,true);now+=10000;
+  await call(m,page);assert.equal(saved.settings.enabled,true);now+=10000;
+  await call(m,page);assert.equal(saved.settings.enabled,false);
+  assert.equal(saved.finishes.length,1);assert.equal(saved.finishes[0].reason,'platform-ended');
+  await call(m,page);assert.equal(saved.finishes.length,1);
+ }finally{Date.now=realNow;}
+});
+test('live metrics or interruption reset pending end confirmation',async()=>{
+ saved={};await call({type:'START',teacher:'老师'});let now=Date.now();const realNow=Date.now;Date.now=()=>now;
+ const m={type:'SAMPLE',header:'老师',metricText:'',visible:true,platformEnded:true};
+ try{
+  await call(m,page);now+=10000;await call({...m,platformEnded:false},page);now+=10000;
+  await call(m,page);now+=10000;await call(m,page);assert.equal(saved.settings.enabled,true);
+  now+=10000;await call({...m,metricText:'直播热度 在线人数 9 直播趋势图'},page);assert.equal(saved.settings.enabled,true);assert.equal(saved.records.length,1);
+ }finally{Date.now=realNow;}
+});

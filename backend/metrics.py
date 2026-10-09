@@ -91,7 +91,7 @@ class MetricsStore:
         return {'batchId': batch['batchId'], 'acceptedIds': [row['id'] for row in records]}
 
     def finish(self, event):
-        if event.get('schema')!=1 or not identifier(event.get('runId')) or event.get('reason')!='manual':raise ValueError('invalid finish')
+        if event.get('schema')!=1 or not identifier(event.get('runId')) or event.get('reason') not in ('manual','platform-ended'):raise ValueError('invalid finish')
         if not isinstance(event.get('teacher'),str) or not 1<=len(event['teacher'])<=60:raise ValueError('invalid teacher')
         count=event.get('expectedCount')
         if count is not None and (type(count) is not int or count<0):raise ValueError('invalid count')

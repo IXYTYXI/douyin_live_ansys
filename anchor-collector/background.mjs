@@ -5,6 +5,16 @@ import {parseMetrics} from './parser.mjs';
 const CAP=5000;
 let pending=Promise.resolve();
 const dashboard=url=>{try{const u=new URL(url);return u.origin==='https://anchor.douyin.com'&&u.pathname==='/anchor/dashboard';}catch{return false;}};
+async function finishRun(settings,reason){
+ const {finishes=[]}=await chrome.storage.local.get('finishes');
+ if(settings.runId&&!settings.endedAt){
+  settings.endedAt=new Date().toISOString();
+  finishes.push({schema:1,kind:'finish',runId:settings.runId,teacher:settings.teacher,expectedCount:Number.isInteger(settings.capturedCount)?settings.capturedCount:null,lastCapturedAt:settings.lastAt?new Date(settings.lastAt).toISOString():null,endedAt:settings.endedAt,reason});
+ }
+ settings.enabled=false;delete settings.endCandidate;
+ settings.status=(reason==='platform-ended'?'已确认平台停播，自动结束采集':'采集已停止')+'，正在上传尾批并确认结束';
+ await chrome.storage.local.set({settings,finishes});return {settings,flushTail:true};
+}
 chrome.runtime.onMessage.addListener((message,sender,reply)=>{
  const popup=sender.id===chrome.runtime.id&&sender.url===chrome.runtime.getURL('popup.html');
  const content=sender.id===chrome.runtime.id&&sender.tab&&dashboard(sender.url);
@@ -22,11 +32,7 @@ chrome.runtime.onMessage.addListener((message,sender,reply)=>{
   }
   if(message.type==='UPLOAD_NOW')return {};
   if(message.type==='EXPORT')return {schema:1,source:'anchor-visible-dashboard',records};
-  if(message.type==='STOP'){
-   const {finishes=[]}=await chrome.storage.local.get('finishes');
-   if(settings.runId&&!settings.endedAt){settings.endedAt=new Date().toISOString();finishes.push({schema:1,kind:'finish',runId:settings.runId,teacher:settings.teacher,expectedCount:Number.isInteger(settings.capturedCount)?settings.capturedCount:null,lastCapturedAt:settings.lastAt?new Date(settings.lastAt).toISOString():null,endedAt:settings.endedAt,reason:'manual'});}
-   settings.enabled=false;settings.status='采集已停止，正在上传尾批并确认结束';await chrome.storage.local.set({settings,finishes});return {settings};
-  }
+  if(message.type==='STOP')return finishRun(settings,'manual');
   if(message.type==='START'){
    if(settings.runId&&!settings.endedAt)throw Error('请先结束上一批采集并确认收尾，再开始新批次');
    if(records.length>=CAP)throw Error('本地记录已满，请先导出并使用新测试环境');
@@ -40,17 +46,28 @@ chrome.runtime.onMessage.addListener((message,sender,reply)=>{
   }
   if(message.type!=='SAMPLE'||!settings.enabled||sender.tab.id!==settings.tabId)return {};
   const now=Date.now();
-  if(settings.lastAt&&now-settings.lastAt<9000)return {};
   const metrics=parseMetrics(String(message.metricText||'').slice(0,3000));
   const accountMatched=String(message.header||'').includes(settings.teacher);
-  if(!accountMatched||!metrics||metrics.online.value===null){settings.status='暂停取数：账号或大屏指标无法确认，请检查页面';await chrome.storage.local.set({settings});return {};}
+  const endEvidence=accountMatched&&message.visible===true&&message.platformEnded===true&&!metrics;
+  if(endEvidence){
+   const prior=settings.endCandidate;
+   if(!prior||now-prior.last>15000)settings.endCandidate={first:now,last:now,count:1};
+   else if(now-prior.last>=9000){prior.last=now;prior.count++;}
+   const candidate=settings.endCandidate;
+   if(candidate.count>=3&&now-candidate.first>=20000)return finishRun(settings,'platform-ended');
+   settings.status='检测到平台已结束提示，正在连续确认';await chrome.storage.local.set({settings});return {};
+  }
+  delete settings.endCandidate;
+  if(!accountMatched||!metrics||metrics.online.value===null){settings.status='采集中断，尚未确认停播：请检查大屏或登录；确认直播结束后点“结束本场采集”';await chrome.storage.local.set({settings});return {};}
+  if(settings.lastAt&&now-settings.lastAt<9000){await chrome.storage.local.set({settings});return {};}
+
   if(records.length>=CAP){settings.enabled=false;settings.status='记录已满，已停止以避免覆盖；请导出';await chrome.storage.local.set({settings});return {};}
   const gap=settings.lastAt?now-settings.lastAt:null;
   records.push({id:crypto.randomUUID(),runId:settings.runId,teacher:settings.teacher,platformSessionId:null,capturedAt:new Date(now).toISOString(),intervalMs:gap,gap:gap!==null&&gap>15000,foreground:message.visible===true,sourceUrl:'https://anchor.douyin.com/anchor/dashboard',metrics});
   if(Number.isInteger(settings.capturedCount))settings.capturedCount++;settings.lastAt=now;settings.status=message.visible?'正在取数 · 本地保存':'后台页面采样 · 可能受浏览器节流影响';
   await chrome.storage.local.set({settings,records});return {count:records.length};
  });
- pending=task.catch(()=>{});task.then(data=>{reply({ok:true,...data});if(['STOP','UPLOAD_NOW'].includes(message.type))void upload(true);},e=>reply({ok:false,error:e.message}));return true;
+ pending=task.catch(()=>{});task.then(data=>{reply({ok:true,...data});if(data?.flushTail||['STOP','UPLOAD_NOW'].includes(message.type))void upload(true);},e=>reply({ok:false,error:e.message}));return true;
 });
 // Fail closed on browser restart: saved tab IDs are not safe account/session bindings.
 chrome.runtime.onStartup.addListener(()=>{const task=pending.then(async()=>{const {settings={}}=await chrome.storage.local.get('settings');settings.enabled=false;settings.status='浏览器已重启，请核对主播后重新开始';await chrome.storage.local.set({settings});});pending=task.catch(()=>{});});
@@ -80,10 +97,19 @@ async function upload(force=false){
  }catch{await updateUpload(s=>{s.uploadStatus='上传配置或授权不可用，本机数据保留';});}
  finally{uploading=false;}
 }
-async function ensureAlarm(){await chrome.alarms.create('upload-metrics',{periodInMinutes:UPLOAD_PERIOD_MINUTES,delayInMinutes:UPLOAD_PERIOD_MINUTES});}
+async function checkHealth(){
+ const {settings={}}=await chrome.storage.local.get('settings');
+ const stale=settings.enabled&&Date.now()-(settings.lastAt||settings.startedAt||Date.now())>30000;
+ if(chrome.action){await chrome.action.setBadgeText({text:stale?'!':''});if(stale)await chrome.action.setBadgeBackgroundColor({color:'#b45309'});}
+}
+async function ensureAlarm(){
+ await chrome.alarms.create('upload-metrics',{periodInMinutes:UPLOAD_PERIOD_MINUTES,delayInMinutes:UPLOAD_PERIOD_MINUTES});
+ await chrome.alarms.create('collector-health',{periodInMinutes:1,delayInMinutes:1});
+}
 if(chrome.alarms){
- chrome.alarms.onAlarm.addListener(a=>{if(a.name==='upload-metrics')void upload();});
+ chrome.alarms.onAlarm.addListener(a=>{if(a.name==='upload-metrics')void upload();if(a.name==='collector-health')void checkHealth();});
  chrome.runtime.onInstalled.addListener(()=>{void ensureAlarm();});
  chrome.runtime.onStartup.addListener(()=>{void ensureAlarm();void upload();});
+ void chrome.alarms.get('collector-health').then(a=>{if(!a)void chrome.alarms.create('collector-health',{periodInMinutes:1,delayInMinutes:1});});
  void chrome.alarms.get('upload-metrics').then(a=>{if(!a)void ensureAlarm();});
 }

@@ -17,3 +17,12 @@ class FinishDatabaseTests(unittest.TestCase):
  def test_legacy_is_not_verified(self):
   store=MetricsStore(os.environ['FINISH_TEST_DSN']);store.migrate()
   self.assertFalse(store.accept({'schema':1,'kind':'finish','runId':uuid.uuid4().hex,'teacher':'测试','expectedCount':None,'lastCapturedAt':None,'endedAt':'2026-10-08T00:00:05Z','reason':'manual'})['verified'])
+
+ def test_platform_end_uses_same_verification_and_seals_run(self):
+  store=MetricsStore(os.environ['FINISH_TEST_DSN']);store.migrate();run=uuid.uuid4().hex
+  row={'id':uuid.uuid4().hex,'runId':run,'teacher':'测试','capturedAt':'2026-10-09T00:00:00Z','metrics':{'online':{'value':5}}}
+  event={'schema':1,'kind':'finish','runId':run,'teacher':'测试','expectedCount':1,'lastCapturedAt':row['capturedAt'],'endedAt':'2026-10-09T00:01:00Z','reason':'platform-ended'}
+  with self.assertRaises(Conflict):store.accept(event)
+  store.accept({'schema':1,'batchId':uuid.uuid4().hex,'records':[row]})
+  self.assertTrue(store.accept(event)['verified']);self.assertTrue(store.accept(event)['verified'])
+  with self.assertRaises(ValueError):store.accept({**event,'reason':'timeout'})
