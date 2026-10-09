@@ -83,8 +83,18 @@ def compact_minutes(minutes):
             'minuteEvidence':[buckets[k] for k in sorted(buckets)]}
 
 
+VALIDATION_ERRORS = {'analysis schema','analysis text','analysis events','event schema','event time','event text',
+                     'unsupported quote','analysis stream error','analysis output incomplete','invalid analysis stream',
+                     'analysis output too large','analysis stream interrupted','analysis input requires hierarchical processing'}
+
+class AnalysisOutputError(ValueError):
+    def __init__(self, cause, candidate):
+        super().__init__(str(cause) if str(cause) in VALIDATION_ERRORS else 'analysis schema')
+        self.candidate=candidate
+
+
 def error_label(exc):
-    return type(exc).__name__+((':'+str(exc.code)) if isinstance(exc,urllib.error.HTTPError) else '')
+    return type(exc).__name__+((':'+str(exc.code)) if isinstance(exc,urllib.error.HTTPError) else (':'+str(exc)) if type(exc) in (ValueError, AnalysisOutputError) and str(exc) in VALIDATION_ERRORS else '')
 
 
 def input_hash(payload, model):
@@ -153,7 +163,11 @@ def generate(payload, env):
         content=stream_content(response) if 'text/event-stream' in response.headers.get('Content-Type','') else json.load(response)['choices'][0]['message']['content']
     content=content.strip()
     if content.startswith('```'):content=content.split('\n',1)[1].rsplit('```',1)[0].strip()
-    return validate_output(json.loads(content),payload)
+    try:
+        candidate=json.loads(content)
+        return validate_output(candidate,payload)
+    except ValueError as exc:
+        raise AnalysisOutputError(exc,locals().get('candidate',content[:80000])) from None
 
 
 def ensure_analysis(data, env):
@@ -188,7 +202,7 @@ def ensure_analysis(data, env):
                 output=generate(payload,env)
             except Exception as exc:
                 # Only exception type is stored; gateway errors can include confidential data.
-                db.execute("UPDATE diting_review.session_analyses SET status='failed',error_type=%s,updated_at=now() WHERE session_id=%s",(error_label(exc),data['id']))
+                db.execute("UPDATE diting_review.session_analyses SET status='failed',error_type=%s,output=%s,updated_at=now() WHERE session_id=%s",(error_label(exc),Jsonb({'unverifiedCandidate':exc.candidate}) if isinstance(exc,AnalysisOutputError) else None,data['id']))
                 return {'status':'生成失败，需检查' if attempts+1>=3 else '生成失败，等待重试','payload':payload}
             generated=db.execute("UPDATE diting_review.session_analyses SET status='done',output=%s,generated_at=now(),updated_at=now() WHERE session_id=%s RETURNING extract(epoch FROM generated_at)",(Jsonb(output),data['id'])).fetchone()[0]
             return {'status':'done','payload':payload,'output':output,'generatedAt':float(generated)}
