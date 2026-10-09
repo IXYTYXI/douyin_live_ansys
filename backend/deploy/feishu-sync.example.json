@@ -1,0 +1,9 @@
+{
+  "base_token": "REPLACE_BASE_TOKEN",
+  "tables": {"sessions":"REPLACE_TABLE_ID", "periods":"REPLACE_TABLE_ID", "samples":"REPLACE_TABLE_ID"},
+  "teachers": ["一星老师"],
+  "since": "2026-10-09T00:00:00+08:00",
+  "public_url": "https://live-ansys.ai.lab.yc345.tv",
+  "lark_cli": "/usr/bin/lark-cli",
+  "state_file": "/var/lib/diting-feishu-sync/state.json"
+}

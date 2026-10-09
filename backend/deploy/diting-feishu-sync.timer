@@ -1,0 +1,8 @@
+[Unit]
+Description=Sync Diting business data to Feishu every five minutes
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=5min
+Unit=diting-feishu-sync.service
+[Install]
+WantedBy=timers.target
