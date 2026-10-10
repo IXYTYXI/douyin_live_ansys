@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "谛听 · 抖音主播取数测试",
-  "version": "0.4.1",
-  "description": "每10秒采集主播指标，本地暂存，每5分钟批量上传到配置的后端。",
+  "version": "0.4.2",
+  "description": "每10秒采集主播指标，每5分钟上传；连续10分钟无新采样自动补传，浏览器重启后补传缓存。",
   "permissions": [
     "storage",
     "activeTab",

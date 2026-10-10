@@ -3,6 +3,7 @@ import {flush,UPLOAD_PERIOD_MINUTES} from './upload.mjs';
 import {endpoint as validateEndpoint} from './endpoint.mjs';
 import {parseMetrics} from './parser.mjs';
 const CAP=5000;
+const IDLE_UPLOAD_MS=10*60*1000;
 let pending=Promise.resolve();
 const dashboard=url=>{try{const u=new URL(url);return u.origin==='https://anchor.douyin.com'&&u.pathname==='/anchor/dashboard';}catch{return false;}};
 async function finishRun(settings,reason){
@@ -28,7 +29,7 @@ chrome.runtime.onMessage.addListener((message,sender,reply)=>{
    if(typeof message.token!=='string'||message.token.length<24)throw Error('上传令牌至少24字符');
    const state=await chrome.storage.local.get(['ingestUrl','batch']);
    if(state.batch&&state.ingestUrl!==ingestUrl)throw Error('先完成当前批次上传再更换地址');
-   await chrome.storage.local.set({ingestUrl,uploadToken:message.token,uploadStatus:'上传已配置，每5分钟发送'});return {};
+   await chrome.storage.local.set({ingestUrl,uploadToken:message.token,uploadStatus:'上传已配置，每5分钟发送；10分钟无新采样自动补传'});return {};
   }
   if(message.type==='UPLOAD_NOW')return {};
   if(message.type==='EXPORT')return {schema:1,source:'anchor-visible-dashboard',records};
@@ -70,14 +71,14 @@ chrome.runtime.onMessage.addListener((message,sender,reply)=>{
  pending=task.catch(()=>{});task.then(data=>{reply({ok:true,...data});if(data?.flushTail||['STOP','UPLOAD_NOW'].includes(message.type))void upload(true);},e=>reply({ok:false,error:e.message}));return true;
 });
 // Fail closed on browser restart: saved tab IDs are not safe account/session bindings.
-chrome.runtime.onStartup.addListener(()=>{const task=pending.then(async()=>{const {settings={}}=await chrome.storage.local.get('settings');settings.enabled=false;settings.status='浏览器已重启，请核对主播后重新开始';await chrome.storage.local.set({settings});});pending=task.catch(()=>{});});
+chrome.runtime.onStartup.addListener(()=>{const task=pending.then(async()=>{const {settings={}}=await chrome.storage.local.get('settings');settings.enabled=false;settings.status='浏览器已重启，请核对主播后重新开始';await chrome.storage.local.set({settings});});pending=task.catch(()=>{});return task;});
 
 function updateUpload(fn){
  const task=pending.then(async()=>{const state=await chrome.storage.local.get(['records','batch','retryAt','uploadStatus','lastUploadedAt','finishes','finishStatus']);const result=fn(state);await chrome.storage.local.set(state);return result;});
  pending=task.catch(()=>{});return task;
 }
 let uploading=false;
-async function upload(force=false){
+async function upload(force=false,drain=false){
  if(uploading)return;uploading=true;
  try{
   const {ingestUrl,uploadToken}=await chrome.storage.local.get(['ingestUrl','uploadToken']);
@@ -88,7 +89,7 @@ async function upload(force=false){
    const response=await fetch(endpoint.href,{method:'POST',redirect:'error',credentials:'omit',headers:{'Content-Type':'application/json','Authorization':'Bearer '+uploadToken},body:JSON.stringify(batch),signal:AbortSignal.timeout(15000)});
    if(!response.ok){const error=Error('Upload failed');error.status=response.status;throw error;}return response.json();
   };
-  for(let i=0;i<(force?17:1);i++){
+  for(let i=0;i<((force||drain)?17:1);i++){
    const before=await updateUpload(s=>(s.records||[]).length);if(!before)break;
    await flush({update:updateUpload,force,post});
    const after=await updateUpload(s=>(s.records||[]).length);if(after>=before)break;
@@ -98,18 +99,28 @@ async function upload(force=false){
  finally{uploading=false;}
 }
 async function checkHealth(){
- const {settings={}}=await chrome.storage.local.get('settings');
- const stale=settings.enabled&&Date.now()-(settings.lastAt||settings.startedAt||Date.now())>30000;
- if(chrome.action){await chrome.action.setBadgeText({text:stale?'!':''});if(stale)await chrome.action.setBadgeBackgroundColor({color:'#b45309'});}
+ // Serialize the trigger with sampling so a fresh sample resets the idle clock.
+ const task=pending.then(async()=>{
+  const {settings={},records=[],finishes=[],ingestUrl,uploadToken,retryAt=0,idleUploadAt=0}=await chrome.storage.local.get(['settings','records','finishes','ingestUrl','uploadToken','retryAt','idleUploadAt']);
+  const now=Date.now(),lastAt=settings.lastAt??settings.startedAt;
+  const idle=Number.isFinite(lastAt)?now-lastAt:0;
+  const stale=settings.enabled&&idle>30000;
+  if(chrome.action){await chrome.action.setBadgeText({text:stale?'!':''});if(stale)await chrome.action.setBadgeBackgroundColor({color:'#b45309'});}
+  if(uploading||idle<IDLE_UPLOAD_MS||(!records.length&&!finishes.length)||!ingestUrl||!uploadToken||retryAt>now||now-idleUploadAt<UPLOAD_PERIOD_MINUTES*60000)return false;
+  // Persist throttling across service-worker suspension; never infer a live end here.
+  await chrome.storage.local.set({idleUploadAt:now});return true;
+ });
+ pending=task.catch(()=>{});
+ if(await task)await upload(false,true);
 }
 async function ensureAlarm(){
  await chrome.alarms.create('upload-metrics',{periodInMinutes:UPLOAD_PERIOD_MINUTES,delayInMinutes:UPLOAD_PERIOD_MINUTES});
  await chrome.alarms.create('collector-health',{periodInMinutes:1,delayInMinutes:1});
 }
 if(chrome.alarms){
- chrome.alarms.onAlarm.addListener(a=>{if(a.name==='upload-metrics')void upload();if(a.name==='collector-health')void checkHealth();});
+ chrome.alarms.onAlarm.addListener(a=>{if(a.name==='upload-metrics')return upload();if(a.name==='collector-health')return checkHealth();});
  chrome.runtime.onInstalled.addListener(()=>{void ensureAlarm();});
- chrome.runtime.onStartup.addListener(()=>{void ensureAlarm();void upload();});
+ chrome.runtime.onStartup.addListener(async()=>{await ensureAlarm();await upload(false,true);});
  void chrome.alarms.get('collector-health').then(a=>{if(!a)void chrome.alarms.create('collector-health',{periodInMinutes:1,delayInMinutes:1});});
  void chrome.alarms.get('upload-metrics').then(a=>{if(!a)void ensureAlarm();});
 }
