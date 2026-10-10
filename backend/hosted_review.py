@@ -4,6 +4,7 @@ from pathlib import Path
 from datetime import datetime,timezone
 from urllib.parse import urlsplit
 from .pipeline import Pipeline
+from .playback import playback_media
 from .metrics import Conflict
 from .metric_projection import review_samples
 from .reviews import ReviewStore
@@ -89,7 +90,7 @@ def main():
                         'collectionStatus':{'readiness':review_readiness(data,reviews.summaries(session)),'finishing':finishing_status(data,reviews.summaries(session)),'count':len(data['samples']),'binding':'teacher-time' if data.get('channelId') else 'run-id','teacher':data['teacher'],**processing_status(data,reviews.summaries(session))},
                         'databaseReviews':True,'notes':reviews.read_notes(session),'summaries':reviews.summaries(session),
                         'summaryConfigured':all(os.environ.get(k) for k in ('SUMMARY_BASE_URL','SUMMARY_MODEL','SUMMARY_API_KEY')),
-                        'recordings':[{**r,'url':signer.url(r['media'],ttl=3600)} for r in data['recordings']]})
+                        'recordings':[{**r,'url':signer.url(playback_media(pipeline_for(session).root,r['media']),ttl=3600)} for r in data['recordings']]})
             except (KeyError,ValueError):return self.reply(404,{'error':'session or run not found'})
             except Exception:return self.reply(503,{'error':'review temporarily unavailable'})
             if path.startswith('/media/'):return super().do_GET()

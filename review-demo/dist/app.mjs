@@ -1,7 +1,7 @@
 import {metrics,metricDefinition,metricRows,axisMaximum,metricReading} from './metric-chart.mjs';
 import {noteFields} from './save-fields.mjs';
 import {printReview} from './print.mjs';
-import {loadTestSession,loadSession,loadSessions,recordingAt,nextRecording} from './remote.mjs';
+import {loadTestSession,loadSession,loadSessions,recordingAt,nextRecording,syncRecordingSource} from './remote.mjs';
 import {anchorSession} from './anchor-fixture.mjs';
 import {normalizeTags,mountTags} from './tags.mjs';
 import {sessions,timeLabel,rangeLabel,selection,samples,stats,transcripts,summary,draftKey,limitTheme} from './model.mjs';
@@ -120,13 +120,18 @@ setInterval(async()=>{
 },10000);
 
 // One real audio sample is available in the isolated combined test; no simulated video.
-const testAudio=document.createElement('video');testAudio.controls=true;testAudio.style.cssText='width:100%;max-height:230px;margin-top:8px';testAudio.hidden=true;document.querySelector('.lesson').append(testAudio);
+const testAudio=document.createElement('video');testAudio.controls=true;testAudio.preload='auto';testAudio.playsInline=true;testAudio.style.cssText='width:100%;max-height:230px;margin-top:8px';testAudio.hidden=true;document.querySelector('.lesson').append(testAudio);
+const videoRetry=document.createElement('button');videoRetry.type='button';videoRetry.textContent='重新加载录像';videoRetry.hidden=true;document.querySelector('.lesson').append(videoRetry);
+let videoLoadStarted=0;
+videoRetry.onclick=()=>{testAudio.pause();testAudio.dataset.recording='';syncTestAudio();};
+
 function syncTestAudio(){const s=session(),r=(s.combinedTest||s.realRecording)?recordingAt(s.recordings,cursor):null;testAudio.hidden=!r;
- if(r){const identity=s.id+':'+r.id;const changed=testAudio.dataset.recording!==identity;
- if(changed||(testAudio.paused&&testAudio.dataset.url!==r.url)){const offset=Math.max(0,cursor-r.start);testAudio.src=r.url;testAudio.dataset.recording=identity;testAudio.dataset.url=r.url;testAudio.onloadedmetadata=()=>{testAudio.currentTime=Math.min(offset,testAudio.duration||offset);};}
- else if(testAudio.paused&&testAudio.readyState>0&&Math.abs(testAudio.currentTime-(cursor-r.start))>.5)testAudio.currentTime=cursor-r.start;
- $('video-note').textContent=s.realRecording?'真实录像 · 音画同步回放':'真实45秒音频 · 无视频';}
- else {if(!testAudio.paused)testAudio.pause();if(s.realRecording)$('video-note').textContent=s.live?'本时段录像尚未完成或存在中断':'本时段暂无录像';else if(s.combinedTest)$('video-note').textContent='测试时间轴演示 · 非视频';}
+ if(r){if(syncRecordingSource(testAudio,s.id,r,cursor))videoLoadStarted=Date.now();
+ const waiting=testAudio.readyState<2;
+ videoRetry.hidden=!(testAudio.error||(waiting&&Date.now()-videoLoadStarted>15000));
+ $('video-note').textContent=testAudio.error?'录像加载失败，可重新加载':waiting?'正在加载录像…':s.realRecording?'真实录像 · 音画同步回放':'真实45秒音频 · 无视频';}
+
+ else {videoRetry.hidden=true;if(!testAudio.paused)testAudio.pause();if(s.realRecording)$('video-note').textContent=s.live?'本时段录像尚未完成或存在中断':'本时段暂无录像';else if(s.combinedTest)$('video-note').textContent='测试时间轴演示 · 非视频';}
 }
 function activeRecording(){return session().recordings?.find(r=>session().id+':'+r.id===testAudio.dataset.recording);}
 testAudio.ontimeupdate=()=>{if(!testAudio.paused){const r=activeRecording();if(r){cursor=Math.min(r.start+testAudio.currentTime,r.start+r.duration-.001);const nextTop=Math.floor(cursor/1800);if(nextTop!==top||cursor>bounds()[1]){persist();top=nextTop;index=null;render();}else updateCursor();}}};

@@ -36,3 +36,17 @@ export function nextRecording(rows=[],current){
  const end=current.start+current.duration;
  return rows.filter(r=>r.id!==current.id&&r.url&&r.duration>0&&r.start>=end-.001&&r.start-end<=1).sort((a,b)=>a.start-b.start)[0]||null;
 }
+
+// Signed query parameters rotate during polling; the media identity does not.
+export function syncRecordingSource(video,sessionId,recording,cursor){
+ const identity=sessionId+':'+recording.id;
+ const path=new URL(recording.url,'http://localhost').origin+new URL(recording.url,'http://localhost').pathname;
+ const changed=video.dataset.recording!==identity||video.dataset.mediaPath!==path;
+ video.dataset.seek=String(Math.max(0,cursor-recording.start));
+ if(changed){
+  video.dataset.recording=identity;video.dataset.mediaPath=path;video.dataset.url=recording.url;
+  video.onloadedmetadata=()=>{const offset=Number(video.dataset.seek);video.currentTime=Number.isFinite(video.duration)?Math.min(offset,Math.max(0,video.duration-.001)):offset;};
+  video.src=recording.url;
+ }else if(video.paused&&video.readyState>0&&Math.abs(video.currentTime-Number(video.dataset.seek))>.5){video.currentTime=Number(video.dataset.seek);}
+ return changed;
+}

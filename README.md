@@ -75,3 +75,12 @@ root可读的 `/etc/diting-ingest.env`。此入口只保存原始采样，不猜
 录像首次完成片段时自动建场。断流后 120 秒内重连续接原场，超过 120 秒新建场；停止并处理完片段后关闭场次。原始人数按主播名及捕获时间关联，允许延迟上传和插件重新开始。当前插件只有主播名称身份，名称必须一致且不同主播不能同名。无人数数据时不伪造人数，分析仍等待采集覆盖。
 
 迁移使用 `backend/deploy/install_live.py`，新增 006_channels，不修改历史 ASR 表；部署前先确认没有进行中的推流。
+
+
+### 网页录像加载优化
+
+复盘播放器按场次和录像文件识别资源，后台每 10 秒刷新签名不再重置同一段视频；加载过久或失败可点击“重新加载录像”。
+
+拉取本次代码后运行 `.venv-review/bin/python backend/deploy/install_playback.py`，启动独立 `diting-playback.service`。它每 30 秒扫描已提交的录像行，用 FFmpeg stream copy 生成索引前置的 MP4 副本，不重新编码，不修改原文件、ASR 输入或时间轴。`media/` 下副本约额外占用一份视频空间；磁盘不足时不发布副本，原录像继续可用。处理状态查看 `journalctl -u diting-playback.service`。
+
+仅重载 `diting-review.service` 以启用回放副本查询；不必重启 OBS、采集插件、MediaMTX 或 ASR 收流服务。旧录像会补处理，新录像在完成入库后自动处理；副本完成前接口仍返回原录像。停止新 worker 并回退本次代码即可恢复原路径，原录像始终保留。
