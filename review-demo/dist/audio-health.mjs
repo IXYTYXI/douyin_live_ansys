@@ -31,3 +31,19 @@ export function createAudioAlertTracker(getStorage=()=>null,initialKeys=[]){
   return {key,sessionId:id};
  }};
 }
+
+export function requestSourceRefresh(teacher,{targetWindow=window,timeoutMs=4000}={}){
+ return new Promise((resolve,reject)=>{
+  const requestId=crypto.randomUUID(),origin=targetWindow.location.origin;
+  const finish=(error)=>{clearTimeout(timer);targetWindow.removeEventListener('message',receive);error?reject(Error(error)):resolve({requested:true});};
+  const receive=event=>{
+   const m=event.data;
+   if(event.source!==targetWindow||event.origin!==origin||m?.channel!=='diting-source-control'||m.type!=='SOURCE_RESULT'||m.requestId!==requestId)return;
+   finish(m.ok===true&&m.requested===true?null:(typeof m.error==='string'?m.error.slice(0,250):'直播源未确认刷新'));
+  };
+  const timer=setTimeout(()=>finish('未收到直播源刷新确认。请在推流电脑的同一 Chrome 中打开公网复盘页，安装新版插件并绑定直播源。'),timeoutMs);
+  targetWindow.addEventListener('message',receive);
+  try{targetWindow.postMessage({channel:'diting-source-control',type:'REFRESH_SOURCE',requestId,teacher},origin);}
+  catch{finish('无法联系直播源插件，请到源页面手动刷新');}
+ });
+}

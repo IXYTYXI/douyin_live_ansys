@@ -1,4 +1,4 @@
-import {audioHealthMessage,createAudioAlertTracker} from './audio-health.mjs';
+import {audioHealthMessage,createAudioAlertTracker,requestSourceRefresh} from './audio-health.mjs';
 import {metrics,metricDefinition,metricRows,axisMaximum,metricReading} from './metric-chart.mjs';
 import {noteFields} from './save-fields.mjs';
 import {printReview} from './print.mjs';
@@ -122,14 +122,16 @@ async function refreshSession(){
  catch{if(epoch===selectionEpoch)$('source-note').textContent='后端读取失败，当前显示上次成功数据';}finally{refreshing=false;}
 }
 setInterval(refreshSession,10000);
+$('audio-alert-close').onclick=()=>audioDialog.close();
 audioDialog.querySelector('form').onsubmit=async event=>{
- event.preventDefault();persist();audioDialog.close();
- // Keep unsaved review edits in memory: database hydration on a full reload
- // would discard them. ESC and automatic recovery only dismiss the dialog.
- if(dirtyKeys.size){await refreshSession();return;}
- try{history.replaceState({...history.state,ditingAudioAlert:audioDialogKey},'');}
- catch{await refreshSession();return;}
- location.reload();
+ event.preventDefault();const s=session(),alertKey=audioDialogKey,button=$('audio-alert-refresh');
+ if(!s.live){$('source-refresh-status').textContent='该场直播已结束，历史静音无法通过刷新恢复。';return;}
+ button.disabled=true;$('source-refresh-status').textContent='正在请求刷新已绑定的直播源页面…';
+ try{
+  await requestSourceRefresh(s.teacher);
+  if(audioDialogKey===alertKey)$('source-refresh-status').textContent='已请求刷新直播源。请确认源页面正在播放、音量已开启；是否恢复有声以新的音轨检测为准。';
+ }catch(error){if(audioDialogKey===alertKey)$('source-refresh-status').textContent=error.message;}
+ finally{if(audioDialogKey===alertKey)button.disabled=false;}
 };
 
 // One real audio sample is available in the isolated combined test; no simulated video.
@@ -191,8 +193,14 @@ function renderCollectionStatus(){
   $('audio-alert-title').textContent=s.live?'录音持续静音，请检查音源':'这场录像存在静音时段';
   $('audio-alert-session').textContent=`${s.teacher} · ${s.date} · ${rangeLabel(s,0,s.duration)}`;
   $('audio-alert-message').textContent=audioMessage;
+  $('audio-alert-refresh').hidden=!s.live;
+  $('audio-alert-hint').textContent=s.live?'可请求刷新 OBS 采集的直播源页面。需在推流电脑同一浏览器中绑定源页面；刷新不会触发数据上传，也不能保证声音恢复。':'这是历史录像的静音记录，刷新页面无法补回当时未录到的声音。';
  }
- if(alert){audioDialogKey=alert.key;audioDialogSession=alert.sessionId;if(!audioDialog.open)audioDialog.showModal();}
+ if(alert){
+  audioDialogKey=alert.key;audioDialogSession=alert.sessionId;
+  $('audio-alert-refresh').disabled=false;$('source-refresh-status').textContent='';
+  if(!audioDialog.open)audioDialog.showModal();
+ }
  const panel=$('collection-status');panel.hidden=!formal;if(!formal)return;
  const status=session().collectionStatus;
  const readiness=status?.readiness;

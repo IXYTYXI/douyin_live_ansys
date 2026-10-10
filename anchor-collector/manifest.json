@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "谛听 · 抖音主播取数测试",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "每10秒采集主播指标，每5分钟上传；连续10分钟无新采样自动补传，浏览器重启后补传缓存。",
   "permissions": [
     "storage",
@@ -21,7 +21,17 @@
         "https://anchor.douyin.com/*"
       ],
       "js": [
-        "content.js"
+        "content.js",
+        "source-control.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://live-ansys.ai.lab.yc345.tv/*"
+      ],
+      "js": [
+        "review-bridge.js"
       ],
       "run_at": "document_idle"
     }

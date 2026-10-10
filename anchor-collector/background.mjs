@@ -1,10 +1,11 @@
+import {sourceCommand} from './source-refresh.mjs';
 import {flushFinishes} from './finish.mjs';
 import {flush,UPLOAD_PERIOD_MINUTES} from './upload.mjs';
 import {endpoint as validateEndpoint} from './endpoint.mjs';
 import {parseMetrics} from './parser.mjs';
 const CAP=5000;
 const IDLE_UPLOAD_MS=10*60*1000;
-let pending=Promise.resolve();
+let pending=Promise.resolve(),sourcePending=Promise.resolve();
 const dashboard=url=>{try{const u=new URL(url);return u.origin==='https://anchor.douyin.com'&&u.pathname==='/anchor/dashboard';}catch{return false;}};
 async function finishRun(settings,reason){
  const {finishes=[]}=await chrome.storage.local.get('finishes');
@@ -17,6 +18,10 @@ async function finishRun(settings,reason){
  await chrome.storage.local.set({settings,finishes});return {settings,flushTail:true};
 }
 chrome.runtime.onMessage.addListener((message,sender,reply)=>{
+ if(['SOURCE_BIND','SOURCE_STATUS','REFRESH_SOURCE'].includes(message?.type)){
+  const task=sourcePending.then(()=>sourceCommand(chrome,message,sender));sourcePending=task.catch(()=>{});
+  task.then(reply,()=>reply({ok:false,error:'直播源操作失败，请重试'}));return true;
+ }
  const popup=sender.id===chrome.runtime.id&&sender.url===chrome.runtime.getURL('popup.html');
  const content=sender.id===chrome.runtime.id&&sender.tab&&dashboard(sender.url);
  if(!popup&&!(content&&message.type==='SAMPLE')){reply({ok:false,error:'不允许的来源'});return false;}
@@ -71,7 +76,7 @@ chrome.runtime.onMessage.addListener((message,sender,reply)=>{
  pending=task.catch(()=>{});task.then(data=>{reply({ok:true,...data});if(data?.flushTail||['STOP','UPLOAD_NOW'].includes(message.type))void upload(true);},e=>reply({ok:false,error:e.message}));return true;
 });
 // Fail closed on browser restart: saved tab IDs are not safe account/session bindings.
-chrome.runtime.onStartup.addListener(()=>{const task=pending.then(async()=>{const {settings={}}=await chrome.storage.local.get('settings');settings.enabled=false;settings.status='浏览器已重启，请核对主播后重新开始';await chrome.storage.local.set({settings});});pending=task.catch(()=>{});return task;});
+chrome.runtime.onStartup.addListener(()=>{const task=pending.then(async()=>{const {settings={}}=await chrome.storage.local.get('settings');settings.enabled=false;settings.status='浏览器已重启，请核对主播后重新开始';await chrome.storage.local.set({settings,sourceBinding:null});});pending=task.catch(()=>{});return task;});
 
 function updateUpload(fn){
  const task=pending.then(async()=>{const state=await chrome.storage.local.get(['records','batch','retryAt','uploadStatus','lastUploadedAt','finishes','finishStatus']);const result=fn(state);await chrome.storage.local.set(state);return result;});

@@ -15,3 +15,7 @@ $('configure').onclick=async()=>{try{
  await send({type:'CONFIGURE_UPLOAD',url,token:$('token').value});$('token').value='';await refresh();
 }catch(e){$('status').textContent=e.message;}};
 $('upload').onclick=async()=>{try{await send({type:'UPLOAD_NOW'});await refresh();}catch(e){$('status').textContent=e.message;}};
+
+async function sourceStatus(){const r=await send({type:'SOURCE_STATUS'});$('source-status').textContent=r.bound?'已绑定：'+r.teacher+'。复盘页须在本机同一浏览器打开。':'尚未绑定。请打开 OBS 采集的大屏，填写主播昵称后绑定。';}
+$('bind-source').onclick=async()=>{try{await send({type:'SOURCE_BIND',teacher:$('teacher').value});await sourceStatus();}catch(e){$('source-status').textContent=e.message;}};
+sourceStatus().catch(()=>$('source-status').textContent='无法读取直播源绑定，请重新打开插件');

@@ -10,5 +10,5 @@
 <div class="audio-alert-icon" aria-hidden="true">!</div><h2 id="audio-alert-title">录音持续静音，请检查音源</h2>
 <p id="audio-alert-session" class="muted"></p><p id="audio-alert-message"></p>
 <p id="audio-alert-hint" class="muted">同一异常仅提醒一次；恢复有声后再次持续静音，会重新提醒。请保持此页面打开，以接收后续提醒。</p>
-<form method="dialog"><button class="primary" autofocus>确定并刷新</button></form>
+<p id="source-refresh-status" role="status"></p><form method="dialog"><button type="button" id="audio-alert-close" autofocus>关闭提醒</button><button type="submit" id="audio-alert-refresh" class="primary">刷新直播源</button></form>
 </dialog><div id="toast" role="status"></div><script type="module" src="app.mjs"></script></body></html>
