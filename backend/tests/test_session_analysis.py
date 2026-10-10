@@ -13,6 +13,12 @@ class AnalysisTests(unittest.TestCase):
           'recordings':[{'start':0,'duration':30}],
           'segments':[{'start':0,'end':30,'state':'done','text':'今天讲分数应用题。'}],
           'notes':[],'summaries':[]}
+    def test_empty_successful_asr_does_not_count_as_transcript_coverage(self):
+        d=self.data();d['segments'][0]['text']=''
+        self.assertEqual(build_payload(d)['coverage']['transcriptGaps'],[[0,30]])
+    def test_audio_quality_evidence_reaches_whole_session_analysis(self):
+        d=self.data();d['duration']=60;d['segments'][0].update(end=60,audio_quality={'version':1,'duration':60,'lowVolumeRanges':[[0,60]]})
+        self.assertEqual(build_payload(d)['coverage']['audioQuality']['sustainedLowVolumeRanges'],[[0,60]])
     def test_counts_not_summed_and_reset_not_reported_as_growth(self):
         p=build_payload(self.data());m=p['metrics']['点赞次数']
         self.assertEqual(m['first']['value'],100);self.assertEqual(m['last']['value'],2)

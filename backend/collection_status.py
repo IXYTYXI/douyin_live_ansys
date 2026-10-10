@@ -1,9 +1,10 @@
 """Read-only diagnostics from durable records; never infer local collector health."""
 from collections import Counter
+from .audio_quality import audio_report,quality_notice
 
 
 def processing_status(data, summaries):
-    return {'asr':dict(Counter(r['state'] for r in data.get('segments',[]))),
+    return {'audioQuality':audio_report(data.get('segments',[]),0,data.get('duration')), 'asr':dict(Counter(r['state'] for r in data.get('segments',[]))),
             'summaries':dict(Counter(r['status'] for r in summaries)),
             'recordings':len(data.get('recordings',[]))}
 
@@ -27,7 +28,9 @@ def finishing_status(data, summaries):
     segments=data.get('segments',[])
     failed=sum(s['state']=='failed' for s in segments)
     pending=sum(s['state'] not in ('done','failed') for s in segments)
-    result.append('转写失败 '+str(failed)+' 段，待处理 '+str(pending)+' 段。' if failed or pending else '已登记片段转写完成。' if segments else '尚无转写片段。')
+    notice=quality_notice(audio_report(segments,0,duration))
+    if notice:result.append(notice.strip())
+    result.append('转写失败 '+str(failed)+' 段，待处理 '+str(pending)+' 段。' if failed or pending else '已登记片段的 ASR 处理完成，不代表音轨有声音或语音完整。' if segments else '尚无转写片段。')
     if data.get('analysisReadyAt',0)<duration:result.append('人数数据尚未覆盖录像末尾，末段总结可能仍在等待。')
     from .live import analysis_windows
     expected={(round(a*1000),round(b*1000)) for a,b in analysis_windows(duration,False)}

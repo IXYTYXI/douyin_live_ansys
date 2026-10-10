@@ -1,3 +1,4 @@
+import {audioHealthMessage} from './audio-health.mjs';
 import {metrics,metricDefinition,metricRows,axisMaximum,metricReading} from './metric-chart.mjs';
 import {noteFields} from './save-fields.mjs';
 import {printReview} from './print.mjs';
@@ -169,6 +170,8 @@ $('export-pdf').onclick=async()=>{
 };
 
 function renderCollectionStatus(){
+ const audioMessage=audioHealthMessage(session(),session().collectionStatus?.audioQuality);
+ $('audio-health').hidden=!audioMessage;$('audio-health').textContent=audioMessage;
  const panel=$('collection-status');panel.hidden=!formal;if(!formal)return;
  const status=session().collectionStatus;
  const readiness=status?.readiness;

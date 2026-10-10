@@ -84,3 +84,11 @@ root可读的 `/etc/diting-ingest.env`。此入口只保存原始采样，不猜
 拉取本次代码后运行 `.venv-review/bin/python backend/deploy/install_playback.py`，启动独立 `diting-playback.service`。它每 30 秒扫描已提交的录像行，用 FFmpeg stream copy 生成索引前置的 MP4 副本，不重新编码，不修改原文件、ASR 输入或时间轴。`media/` 下副本约额外占用一份视频空间；磁盘不足时不发布副本，原录像继续可用。处理状态查看 `journalctl -u diting-playback.service`。
 
 仅重载 `diting-review.service` 以启用回放副本查询；不必重启 OBS、采集插件、MediaMTX 或 ASR 收流服务。旧录像会补处理，新录像在完成入库后自动处理；副本完成前接口仍返回原录像。停止新 worker 并回退本次代码即可恢复原路径，原录像始终保留。
+
+### 音轨静音兜底
+
+新收到的音频在入库时检测音量，检测结果与 ASR 状态分开保存。连续约 60 秒的静音或极低音量会在复盘页顶部提示检查 OBS 音源；提示不依赖 ASR 返回，不自动停流或删除录像。声音恢复后保留历史异常记录。有声音不等于有可识别语音，检测也不能判断锁屏、重启等具体原因。
+
+检测使用 16kHz 单声道 PCM 的一秒峰值，阈值 -60 dBFS；仅合并连续已收到的范围，不用无音频的间隙凑满告警时长。依赖已完成的录像片段，正常情况下页面提示可能滞后约 1—2 分钟。复盘页必须保持打开才能看到提示，目前没有桌面或飞书主动通知。时段总结和整场分析会携带静音、未检测及空转写说明，不把 ASR 完成等同于语音完整。
+
+已有部署先执行 `.venv-review/bin/python -m backend.deploy.upgrade_audio_quality` 添加 nullable JSONB 字段，再加载新代码。可加 `--backfill-session <sessionId>` 检测指定历史场次；直播处理服务还会分批补检测旧的直播音频。检测失败保持未知状态，不伪报正常。整个过程不修改原始录像、ASR 文本或运营笔记。

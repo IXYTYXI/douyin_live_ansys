@@ -4,6 +4,7 @@ from pathlib import Path
 from datetime import datetime,timezone
 from urllib.parse import urlsplit
 from .pipeline import Pipeline
+from .audio_quality import audio_report,annotate_fields
 from .playback import playback_media
 from .metrics import Conflict
 from .metric_projection import review_samples
@@ -85,10 +86,11 @@ def main():
                 if path=='/api/test/session' or path.startswith('/api/sessions/'):
                     session=default if path=='/api/test/session' else path.rsplit('/',1)[-1]
                     data=review_data(session)
+                    summaries=[{**r,'fields':annotate_fields(r['fields'],audio_report(data['segments'],r['start'],r['end'])) if r.get('fields') else r.get('fields')} for r in reviews.summaries(session)]
                     return self.reply(200,{**data,'source':'live-review' if session.startswith('live-') else 'asr-integration-test','realRecording':True,
                         'startedAt':datetime.fromtimestamp(data['startedAtUnix'],timezone.utc).isoformat(),
-                        'collectionStatus':{'readiness':review_readiness(data,reviews.summaries(session)),'finishing':finishing_status(data,reviews.summaries(session)),'count':len(data['samples']),'binding':'teacher-time' if data.get('channelId') else 'run-id','teacher':data['teacher'],**processing_status(data,reviews.summaries(session))},
-                        'databaseReviews':True,'notes':reviews.read_notes(session),'summaries':reviews.summaries(session),
+                        'collectionStatus':{'readiness':review_readiness(data,summaries),'finishing':finishing_status(data,summaries),'count':len(data['samples']),'binding':'teacher-time' if data.get('channelId') else 'run-id','teacher':data['teacher'],**processing_status(data,summaries)},
+                        'databaseReviews':True,'notes':reviews.read_notes(session),'summaries':summaries,
                         'summaryConfigured':all(os.environ.get(k) for k in ('SUMMARY_BASE_URL','SUMMARY_MODEL','SUMMARY_API_KEY')),
                         'recordings':[{**r,'url':signer.url(playback_media(pipeline_for(session).root,r['media']),ttl=3600)} for r in data['recordings']]})
             except (KeyError,ValueError):return self.reply(404,{'error':'session or run not found'})

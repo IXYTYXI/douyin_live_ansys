@@ -64,6 +64,7 @@ def scan(pipeline,store,inbox):
 
 
 def main():
+    from .audio_quality import backfill
     pipeline=Pipeline.__new__(Pipeline)
     pipeline.root=Path(os.environ['DATA_DIR']).resolve();pipeline.business='douyin_live'
     pipeline.schema='diting_asr_douyin_live';pipeline.max_inflight=1;pipeline.poll_seconds=5
@@ -93,7 +94,9 @@ def main():
     server.RequestHandlerClass=Handler
     def importer():
         while True:
-            try:scan(pipeline,store,inbox)
+            try:
+                scan(pipeline,store,inbox)
+                backfill(pipeline,limit=20)
             except Exception as e:print('Live scan failed:',type(e).__name__,flush=True)
             time.sleep(3)
     def transcriber():

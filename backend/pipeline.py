@@ -4,6 +4,7 @@ import json
 import math
 import random
 from .asr import ASRError
+from .audio_quality import pcm_quality
 import os
 import re
 import shutil
@@ -47,6 +48,7 @@ class Pipeline:
             db.execute((Path(__file__).parent / 'migrations/002_asr.sql').read_text())
             db.execute('ALTER TABLE segments ADD COLUMN IF NOT EXISTS task_id TEXT')
             db.execute('ALTER TABLE segments ADD COLUMN IF NOT EXISTS utterances JSONB')
+            db.execute('ALTER TABLE segments ADD COLUMN IF NOT EXISTS audio_quality JSONB')
             db.execute("INSERT INTO settings VALUES ('business',%s) ON CONFLICT DO NOTHING", (business,))
             if db.execute("SELECT value FROM settings WHERE key='business'").fetchone()['value'] != business:
                 raise ValueError('business namespace differs')
@@ -101,7 +103,7 @@ class Pipeline:
                         out.setparams((1, 2, 16000, 0, 'NONE', 'not compressed'))
                         out.writeframes(pcm)
                     os.replace(target, self.root / 'media' / name)
-                    chunks.append((key, rid, session_id, offset + local, offset + local + duration, name))
+                    chunks.append((key, rid, session_id, offset + local, offset + local + duration, name, json.dumps(pcm_quality(pcm))))
                     local += duration
             if not chunks:
                 raise ValueError('recording contains no audio')
@@ -110,7 +112,7 @@ class Pipeline:
             with self.db() as db:
                 db.execute('INSERT INTO recordings VALUES (%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING',
                            (rid, session_id, offset, local, media))
-                db.cursor().executemany('INSERT INTO segments(id,recording_id,session_id,start,"end",audio) VALUES (%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING', chunks)
+                db.cursor().executemany('INSERT INTO segments(id,recording_id,session_id,start,"end",audio,audio_quality) VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb) ON CONFLICT DO NOTHING', chunks)
             return rid
 
     def step(self, provider, audio_url, now=None):
@@ -182,7 +184,7 @@ class Pipeline:
             session = db.execute('SELECT * FROM sessions WHERE id=%s', (session_id,)).fetchone()
             if session is None:
                 raise KeyError(session_id)
-            rows = db.execute('SELECT id,recording_id,start,"end",state,text,utterances,attempts,error FROM segments WHERE session_id=%s AND start<%s AND "end">%s ORDER BY start', (session_id, end, start)).fetchall()
+            rows = db.execute('SELECT id,recording_id,start,"end",state,text,utterances,attempts,error,audio_quality FROM segments WHERE session_id=%s AND start<%s AND "end">%s ORDER BY start', (session_id, end, start)).fetchall()
             recordings = db.execute('SELECT id,start,duration,media FROM recordings WHERE session_id=%s ORDER BY start', (session_id,)).fetchall()
         return {'sessionId': session_id, 'startedAtUnix': session['started'], 'timeUnit': 'seconds',
                 'segments': [dict(r, timing='utterance' if r['utterances'] else 'chunk') for r in rows],

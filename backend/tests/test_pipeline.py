@@ -46,6 +46,7 @@ class FlowTest(unittest.TestCase):
         self.assertEqual([(x['start'], x['end']) for x in result['segments']], [(120, 122), (122, 123)])
         self.assertEqual(len(result['recordings']), 1)
         self.assertTrue(all(x['text'] is None for x in result['segments']))
+        self.assertEqual([x['audio_quality']['lowVolumeRanges'] for x in result['segments']],[[[0,2]],[[0,1]]])
 
     def test_restart_resumes_submitted_without_resubmitting(self):
         self.ingest()

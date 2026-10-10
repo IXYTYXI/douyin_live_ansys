@@ -1,4 +1,6 @@
 """Readiness of received material, without claiming unseen source data is complete."""
+from .audio_quality import audio_report,quality_notice
+
 METRICS_GRACE_SECONDS=300
 
 
@@ -28,6 +30,11 @@ def metric_gaps(samples,start,end):
 
 def review_readiness(data,summaries):
     duration=data.get('duration',0);reasons=[]
+    audio=audio_report(data.get('segments',[]),0,duration)
+    notice=quality_notice(audio)
+    if audio['sustainedLowVolumeRanges']:
+        return {'state':'attention','label':'音轨存在持续静音或极低音量，需检查','reasons':[notice.strip()]}
+    if notice:reasons.append(notice.strip())
     if data.get('live'):return {'state':'live','label':'直播中／等待停播确认','reasons':[]}
     if duration<=0 or not data.get('recordings'):return {'state':'processing','label':'等待录像','reasons':['尚无已入库录像，不能确认复盘就绪。']}
     segments=data.get('segments',[])

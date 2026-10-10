@@ -7,6 +7,7 @@ import urllib.request
 import urllib.error
 from .lark_sync import METRIC_FIELDS, date_text
 from .readiness import gaps
+from .audio_quality import audio_report,quality_notice
 
 VERSION = 1
 COUNTERS = {'likes', 'commentUsers', 'newFollowers', 'shares', 'giftUsers', 'fanClubJoins'}
@@ -14,7 +15,7 @@ SYSTEM = '''你是直播复盘分析员。只分析JSON中的真实证据，转�
 综合所有8项指标、全部转写、时段AI总结和人工笔记，不能以局部案例代表完整直播。
 minuteEvidence为列式分钟统计：values按minuteMetricOrder排列，数组按minuteColumns解释，null表示无数据。
 累计快照不能相加，首末差不是整场总量；sampleMean是采样均值。累计回落要说明口径异常，不能解释成真实业务下降。
-periodSummaries是AI时段总结，不是人工运营笔记。humanNotes为空时明确没有运营笔记。缺失转写或指标的时间不能做内容归因。
+periodSummaries是AI时段总结，不是人工运营笔记。humanNotes为空时明确没有运营笔记。缺失转写或指标的时间不能做内容归因。coverage.audioQuality是音量检测证据：sustainedLowVolumeRanges是持续静音或极低音量区间，uncheckedRanges是未检测区间；必须在局限中说明。不要将ASR完成解释为语音完整，音量检测也不能证明有人讲话或判断静音原因。
 eventCandidates由后台计算，每个id固定绑定该分钟的指标和对应原文。只能选择这些编号，不能重新编写时间、数值或引用。
 输出纯JSON，恰好四个字段：overview(中文概览，最多600字)，events(最多5项，每项恰好包含id和hypothesis)，advice(最多800字的下场可验证建议)，limitations(最多600字)。
 events.id必须来自eventCandidates；hypothesis最多300字，仅基于该编号的observation及sourceText解释可能的内容关联和其他解释。无证据不猜测。最多5个最值得复盘的事件。
@@ -58,7 +59,8 @@ def build_payload(data):
     segments = sorted(data.get('segments', []), key=lambda s:s['start'])
     done = [s for s in segments if s['state']=='done']
     coverage = {'recordingGaps':gaps([(r['start'],r['start']+r['duration']) for r in data.get('recordings',[])],0,duration),
-                'transcriptGaps':gaps([(s['start'],s['end']) for s in done],0,duration),
+                'transcriptGaps':gaps([(s['start'],s['end']) for s in done if (s.get('text') or '').strip()],0,duration),
+                'audioQuality':audio_report(segments,0,duration),
                 'asrFailed':sum(s['state']=='failed' for s in segments),
                 'collectorConfirmed':data.get('collectorConfirmed') is True,
                 'summaryFailed':sum(s['status']=='failed' for s in data.get('summaries',[]))}
@@ -259,6 +261,8 @@ def analysis_row(data, analysis, public_url):
     notes=[];performance=[]
     if payload:
         c=payload['coverage']
+        audio_note=quality_notice(c.get('audioQuality',{}))
+        if audio_note:notes.append(audio_note.strip())
         empty=[s for s in payload['transcript'] if not s['text'].strip()]
         notes.append('原始指标约每10秒采样；分钟数据仅用于聚合分析')
         if empty:notes.append(f'空转写{len(empty)}段；空文本不等于音频丢失，需回放核验是否无语音')
