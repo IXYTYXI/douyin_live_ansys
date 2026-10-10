@@ -1,4 +1,4 @@
-import {audioHealthMessage} from './audio-health.mjs';
+import {audioHealthMessage,createAudioAlertTracker} from './audio-health.mjs';
 import {metrics,metricDefinition,metricRows,axisMaximum,metricReading} from './metric-chart.mjs';
 import {noteFields} from './save-fields.mjs';
 import {printReview} from './print.mjs';
@@ -17,6 +17,8 @@ if(!sessions.length)sessions.push({id:'empty',teacher:'暂无直播',course:'等
 const $=id=>document.getElementById(id);let si=(apiSession||anchorSession)?sessions.length-1:0,top=0,step=600,index=null,cursor=0,playing=false,scope='range',drafts={},storageOK=true,lastTick=0;
 try{const stored=JSON.parse(localStorage.getItem('diting-demo-reviews-v1')||'{}');if(stored&&typeof stored==='object'&&!Array.isArray(stored))drafts=stored;}catch{storageOK=false;}
 const dirtyKeys=new Set();
+const audioAlerts=createAudioAlertTracker(()=>localStorage),audioDialog=$('audio-alert');
+let audioDialogSession=null;
 function noteRecordKey(r,s){return r.scope==='session'?`${s.id}:whole`:draftKey(s.id,r.start,r.end);}
 function hydrateNotes(s=apiSession){for(const r of s?.notes||[]){const k=noteRecordKey(r,s);if(!dirtyKeys.has(k))drafts[k]={...r.fields,version:r.version,savedAt:r.savedAt};}}
 if(apiSession?.databaseReviews){for(const k of Object.keys(drafts))if(k.startsWith(apiSession.id+':'))delete drafts[k];hydrateNotes();}
@@ -172,6 +174,15 @@ $('export-pdf').onclick=async()=>{
 function renderCollectionStatus(){
  const audioMessage=audioHealthMessage(session(),session().collectionStatus?.audioQuality);
  $('audio-health').hidden=!audioMessage;$('audio-health').textContent=audioMessage;
+ const s=session(),report=s.collectionStatus?.audioQuality,id=s.sessionId||s.id;
+ if(audioDialog.open&&(audioDialogSession!==id||['sound','recovered'].includes(report?.state)))audioDialog.close();
+ const alert=audioAlerts.next(s,report);
+ if(alert||(audioDialog.open&&audioDialogSession===id)){
+  $('audio-alert-title').textContent=s.live?'录音持续静音，请检查音源':'这场录像存在静音时段';
+  $('audio-alert-session').textContent=`${s.teacher} · ${s.date} · ${rangeLabel(s,0,s.duration)}`;
+  $('audio-alert-message').textContent=audioMessage;
+ }
+ if(alert){audioDialogSession=alert.sessionId;if(!audioDialog.open)audioDialog.showModal();}
  const panel=$('collection-status');panel.hidden=!formal;if(!formal)return;
  const status=session().collectionStatus;
  const readiness=status?.readiness;

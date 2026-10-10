@@ -11,3 +11,23 @@ export function audioHealthMessage(session,report){
  if(parts.length)parts.push('音量检测基于已收到的片段，可能滞后约 1—2 分钟；有声音不等于有可识别语音。');
  return parts.join(' ');
 }
+
+// Identify a silence incident by the last audible moment, not its growing end
+// or recording boundaries. A gap alone is not evidence that sound recovered.
+export function createAudioAlertTracker(getStorage=()=>null){
+ const storageKey='diting-audio-alerts-v1';let seen=new Set();
+ const read=()=>{try{const saved=JSON.parse(getStorage()?.getItem(storageKey)||'[]');if(Array.isArray(saved))for(const key of saved)if(typeof key==='string')seen.add(key);}catch{}};
+ read();
+ return {next(session,report){
+  const id=session.sessionId||session.id,last=report?.lastAudibleAt;
+  if(!id||id==='empty'||report?.state!=='silent')return null;
+  const ranges=report.sustainedLowVolumeRanges||[];
+  // Historical long silence must not turn a new short pause into an alert.
+  if(!ranges.some(([a,b])=>Number.isFinite(a)&&Number.isFinite(b)&&b-a>=(report.alertSeconds||60)-.001&&(last==null||a>=last-.001)))return null;
+  const key=JSON.stringify([id,last==null?'no-audible':Math.round(last*1000)]);
+  read();if(seen.has(key))return null;
+  seen.add(key);seen=new Set([...seen].slice(-200));
+  try{getStorage()?.setItem(storageKey,JSON.stringify([...seen]));}catch{}
+  return {key,sessionId:id};
+ }};
+}
