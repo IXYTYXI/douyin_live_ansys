@@ -41,7 +41,8 @@ export function nextRecording(rows=[],current){
 export function syncRecordingSource(video,sessionId,recording,cursor){
  const identity=sessionId+':'+recording.id;
  const path=new URL(recording.url,'http://localhost').origin+new URL(recording.url,'http://localhost').pathname;
- const changed=video.dataset.recording!==identity||video.dataset.mediaPath!==path;
+ // Let an in-progress playback finish before upgrading its prepared copy.
+ const changed=video.dataset.recording!==identity||(video.paused&&video.dataset.mediaPath!==path);
  video.dataset.seek=String(Math.max(0,cursor-recording.start));
  if(changed){
   video.dataset.recording=identity;video.dataset.mediaPath=path;video.dataset.url=recording.url;

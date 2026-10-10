@@ -25,3 +25,14 @@ test('switching recordings loads once and seeks within the new segment',()=>{
  playback.syncRecordingSource(video,'session',rows[1],80);video.onloadedmetadata();
  assert.equal(loads,2);assert.equal(video.currentTime,20);
 });
+
+test('publishing a playback copy does not interrupt an already playing original',()=>{
+ let loads=0;const video={dataset:{},paused:true,readyState:4,currentTime:0,duration:60,set src(v){loads++;}};
+ playback.syncRecordingSource(video,'session',rows[0],0);
+ video.paused=false;
+ playback.syncRecordingSource(video,'session',{...rows[0],url:'/optimized'},5);
+ assert.equal(loads,1);
+ video.paused=true;
+ playback.syncRecordingSource(video,'session',{...rows[0],url:'/optimized'},5);
+ assert.equal(loads,2);
+});
