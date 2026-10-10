@@ -54,9 +54,28 @@ class ChannelTests(unittest.TestCase):
 
     def test_reconnect_boundary_uses_media_time_not_import_time(self):
         from backend.live import resume_session
-        self.assertTrue(resume_session(100,220))
-        self.assertFalse(resume_session(100,220.01))
+        self.assertTrue(resume_session(100,250))
+        self.assertTrue(resume_session(100,280))
+        self.assertFalse(resume_session(100,280.01))
         self.assertFalse(resume_session(None,10))
+
+    def test_channel_stop_waits_three_minutes_and_all_finalized_inputs(self):
+        import json,tempfile
+        from pathlib import Path
+        from unittest.mock import MagicMock,patch
+        from backend.live_service import scan
+        with tempfile.TemporaryDirectory() as root:
+            folder=Path(root)/'channel-9cc2845a-2307-43da-a4c3-48da19097548';folder.mkdir()
+            (folder/'state.json').write_text(json.dumps({'live':False,'at':1000}))
+            store=MagicMock();pipeline=MagicMock()
+            with patch('backend.live_service.time.time',return_value=1179.99):scan(pipeline,store,Path(root))
+            store.connect.assert_not_called()
+            source=folder/'1791420000-123456.mp4';source.write_bytes(b'unfinalized')
+            with patch('backend.live_service.time.time',return_value=1180):scan(pipeline,store,Path(root))
+            store.connect.assert_not_called()
+            source.unlink()
+            with patch('backend.live_service.time.time',return_value=1180):scan(pipeline,store,Path(root))
+            store.connect.return_value.__enter__.return_value.execute.assert_called_once()
 
     def test_channel_segment_retry_reuses_session_and_finishes_before_removal(self):
         import json,tempfile

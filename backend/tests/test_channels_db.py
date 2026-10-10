@@ -24,10 +24,10 @@ class ChannelDatabaseTests(unittest.TestCase):
         sid=store.register_segment(channel['id'],'first.mp4',1000)
         store.finish_segment(channel['id'],'first.mp4',1060)
         self.assertEqual(sid,store.register_segment(channel['id'],'first.mp4',1000))
-        second=store.register_segment(channel['id'],'second.mp4',1180)
+        second=store.register_segment(channel['id'],'second.mp4',1210)
         self.assertEqual(sid,second)
-        store.finish_segment(channel['id'],'second.mp4',1200)
-        third=store.register_segment(channel['id'],'third.mp4',1320.01)
+        store.finish_segment(channel['id'],'second.mp4',1270)
+        third=store.register_segment(channel['id'],'third.mp4',1450.01)
         self.assertNotEqual(third['id'],sid['id'])
         self.assertEqual(sid,store.register_segment(channel['id'],'first.mp4',1000))
         sessions={s['id']:s for s in store.sessions()}

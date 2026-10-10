@@ -13,7 +13,7 @@ def run_id(value):
         return False
 
 
-RECONNECT_SECONDS=120
+RECONNECT_SECONDS=180
 
 
 def stream_path(value):
