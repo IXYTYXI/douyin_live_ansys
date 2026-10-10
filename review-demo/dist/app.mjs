@@ -17,8 +17,8 @@ if(!sessions.length)sessions.push({id:'empty',teacher:'暂无直播',course:'等
 const $=id=>document.getElementById(id);let si=(apiSession||anchorSession)?sessions.length-1:0,top=0,step=600,index=null,cursor=0,playing=false,scope='range',drafts={},storageOK=true,lastTick=0;
 try{const stored=JSON.parse(localStorage.getItem('diting-demo-reviews-v1')||'{}');if(stored&&typeof stored==='object'&&!Array.isArray(stored))drafts=stored;}catch{storageOK=false;}
 const dirtyKeys=new Set();
-const audioAlerts=createAudioAlertTracker(()=>localStorage),audioDialog=$('audio-alert');
-let audioDialogSession=null;
+const audioAlerts=createAudioAlertTracker(()=>localStorage,[history.state?.ditingAudioAlert]),audioDialog=$('audio-alert');
+let audioDialogSession=null,audioDialogKey=null;
 function noteRecordKey(r,s){return r.scope==='session'?`${s.id}:whole`:draftKey(s.id,r.start,r.end);}
 function hydrateNotes(s=apiSession){for(const r of s?.notes||[]){const k=noteRecordKey(r,s);if(!dirtyKeys.has(k))drafts[k]={...r.fields,version:r.version,savedAt:r.savedAt};}}
 if(apiSession?.databaseReviews){for(const k of Object.keys(drafts))if(k.startsWith(apiSession.id+':'))delete drafts[k];hydrateNotes();}
@@ -116,11 +116,21 @@ async function switchSession(id){
  try{const fresh=await loadSession(id);if(epoch!==selectionEpoch)return;apiSession=fresh;sessions.splice(0,sessions.length,fresh);si=0;top=0;index=null;cursor=0;apiError=null;hydrateNotes(fresh);const url=new URL(location.href);url.searchParams.set('session',id);history.replaceState(null,'',url);testAudio.removeAttribute('src');testAudio.dataset.recording='';render();syncTestAudio();}
  catch(e){apiError=e.message;$('source-note').textContent=e.message;}finally{if(epoch===selectionEpoch){$('session').disabled=false;sessionOptions();}}
 }
-setInterval(async()=>{
+async function refreshSession(){
  if(refreshing)return;refreshing=true;const selected=apiSession,epoch=selectionEpoch;
  try{if(formal){const list=await loadSessions();sessionList=list.sessions;if(epoch===selectionEpoch)sessionOptions();if(!selected&&sessionList.length&&epoch===selectionEpoch){await switchSession(query.get('session')||list.defaultSession||sessionList[0].id);return;}}if(selected){const fresh=await (formal?loadSession(selected.sessionId):loadTestSession());if(epoch!==selectionEpoch||apiSession!==selected)return;persist();const oldKey=key(),oldNoteKey=noteKey(),rangeDirty=dirtyKeys.has(oldKey),noteDirty=dirtyKeys.has(oldNoteKey);Object.assign(selected,fresh);if(rangeDirty)dirtyKeys.add(key());if(noteDirty)dirtyKeys.add(noteKey());if(rangeDirty||noteDirty)persist();hydrateNotes(selected);if(session()===selected)render();apiError=null;}}
  catch{if(epoch===selectionEpoch)$('source-note').textContent='后端读取失败，当前显示上次成功数据';}finally{refreshing=false;}
-},10000);
+}
+setInterval(refreshSession,10000);
+audioDialog.querySelector('form').onsubmit=async event=>{
+ event.preventDefault();persist();audioDialog.close();
+ // Keep unsaved review edits in memory: database hydration on a full reload
+ // would discard them. ESC and automatic recovery only dismiss the dialog.
+ if(dirtyKeys.size){await refreshSession();return;}
+ try{history.replaceState({...history.state,ditingAudioAlert:audioDialogKey},'');}
+ catch{await refreshSession();return;}
+ location.reload();
+};
 
 // One real audio sample is available in the isolated combined test; no simulated video.
 const testAudio=document.createElement('video');testAudio.controls=true;testAudio.preload='auto';testAudio.playsInline=true;testAudio.style.cssText='width:100%;max-height:230px;margin-top:8px';testAudio.hidden=true;document.querySelector('.lesson').append(testAudio);
@@ -182,7 +192,7 @@ function renderCollectionStatus(){
   $('audio-alert-session').textContent=`${s.teacher} · ${s.date} · ${rangeLabel(s,0,s.duration)}`;
   $('audio-alert-message').textContent=audioMessage;
  }
- if(alert){audioDialogSession=alert.sessionId;if(!audioDialog.open)audioDialog.showModal();}
+ if(alert){audioDialogKey=alert.key;audioDialogSession=alert.sessionId;if(!audioDialog.open)audioDialog.showModal();}
  const panel=$('collection-status');panel.hidden=!formal;if(!formal)return;
  const status=session().collectionStatus;
  const readiness=status?.readiness;

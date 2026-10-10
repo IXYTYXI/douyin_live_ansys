@@ -47,3 +47,12 @@ test('bad saved state and failed writes do not break the page or repeat alerts',
   assert.ok(tracker.next(s,report));assert.equal(tracker.next(s,report),null);
  }
 });
+
+test('refresh retains this incident through navigation state when browser storage is blocked',()=>{
+ const blocked=()=>{throw Error('storage blocked');},s={sessionId:'live-a'};
+ const report={state:'silent',lastAudibleAt:5,sustainedLowVolumeRanges:[[5,80]]};
+ const alert=createAudioAlertTracker(blocked).next(s,report);
+ const reloaded=createAudioAlertTracker(blocked,[alert.key]);
+ assert.equal(reloaded.next(s,report),null);
+ assert.ok(reloaded.next(s,{...report,lastAudibleAt:100,sustainedLowVolumeRanges:[[100,170]]}));
+});

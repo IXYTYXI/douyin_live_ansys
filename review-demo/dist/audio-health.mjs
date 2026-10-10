@@ -14,8 +14,8 @@ export function audioHealthMessage(session,report){
 
 // Identify a silence incident by the last audible moment, not its growing end
 // or recording boundaries. A gap alone is not evidence that sound recovered.
-export function createAudioAlertTracker(getStorage=()=>null){
- const storageKey='diting-audio-alerts-v1';let seen=new Set();
+export function createAudioAlertTracker(getStorage=()=>null,initialKeys=[]){
+ const storageKey='diting-audio-alerts-v1';let seen=new Set(initialKeys.filter(key=>typeof key==='string'));
  const read=()=>{try{const saved=JSON.parse(getStorage()?.getItem(storageKey)||'[]');if(Array.isArray(saved))for(const key of saved)if(typeof key==='string')seen.add(key);}catch{}};
  read();
  return {next(session,report){
