@@ -1,4 +1,4 @@
-import {audioHealthMessage,createAudioAlertTracker,requestSourceRefresh} from './audio-health.mjs';
+import {audioHealthMessage,createAudioAlertTracker,requestSourceRefresh,requestSourceHealth,createIngestObserver,connectionDiagnosis,createConnectionAlerts} from './audio-health.mjs';
 import {metrics,metricDefinition,metricRows,axisMaximum,metricReading} from './metric-chart.mjs';
 import {noteFields} from './save-fields.mjs';
 import {printReview} from './print.mjs';
@@ -18,7 +18,10 @@ const $=id=>document.getElementById(id);let si=(apiSession||anchorSession)?sessi
 try{const stored=JSON.parse(localStorage.getItem('diting-demo-reviews-v1')||'{}');if(stored&&typeof stored==='object'&&!Array.isArray(stored))drafts=stored;}catch{storageOK=false;}
 const dirtyKeys=new Set();
 const audioAlerts=createAudioAlertTracker(()=>localStorage,[history.state?.ditingAudioAlert]),audioDialog=$('audio-alert');
-let audioDialogSession=null,audioDialogKey=null;
+let audioDialogSession=null,audioDialogKey=null,audioDialogKind='audio';
+const ingestObserver=createIngestObserver(),connectionAlerts=createConnectionAlerts();
+let sourceEvidence=null,sourceChecking=false,sourceRefreshBusy=false;
+if(apiSession)ingestObserver.observe(apiSession);
 function noteRecordKey(r,s){return r.scope==='session'?`${s.id}:whole`:draftKey(s.id,r.start,r.end);}
 function hydrateNotes(s=apiSession){for(const r of s?.notes||[]){const k=noteRecordKey(r,s);if(!dirtyKeys.has(k))drafts[k]={...r.fields,version:r.version,savedAt:r.savedAt};}}
 if(apiSession?.databaseReviews){for(const k of Object.keys(drafts))if(k.startsWith(apiSession.id+':'))delete drafts[k];hydrateNotes();}
@@ -113,25 +116,31 @@ let themeComposing=false;$('theme').addEventListener('compositionstart',()=>them
 
 async function switchSession(id){
  persist();const epoch=++selectionEpoch;testAudio.pause();playing=false;$('session').disabled=true;
- try{const fresh=await loadSession(id);if(epoch!==selectionEpoch)return;apiSession=fresh;sessions.splice(0,sessions.length,fresh);si=0;top=0;index=null;cursor=0;apiError=null;hydrateNotes(fresh);const url=new URL(location.href);url.searchParams.set('session',id);history.replaceState(null,'',url);testAudio.removeAttribute('src');testAudio.dataset.recording='';render();syncTestAudio();}
+ try{const fresh=await loadSession(id);if(epoch!==selectionEpoch)return;apiSession=fresh;ingestObserver.observe(fresh);sourceEvidence=null;sessions.splice(0,sessions.length,fresh);si=0;top=0;index=null;cursor=0;apiError=null;hydrateNotes(fresh);const url=new URL(location.href);url.searchParams.set('session',id);history.replaceState(null,'',url);testAudio.removeAttribute('src');testAudio.dataset.recording='';render();syncTestAudio();refreshSourceHealth();}
  catch(e){apiError=e.message;$('source-note').textContent=e.message;}finally{if(epoch===selectionEpoch){$('session').disabled=false;sessionOptions();}}
 }
 async function refreshSession(){
  if(refreshing)return;refreshing=true;const selected=apiSession,epoch=selectionEpoch;
- try{if(formal){const list=await loadSessions();sessionList=list.sessions;if(epoch===selectionEpoch)sessionOptions();if(!selected&&sessionList.length&&epoch===selectionEpoch){await switchSession(query.get('session')||list.defaultSession||sessionList[0].id);return;}}if(selected){const fresh=await (formal?loadSession(selected.sessionId):loadTestSession());if(epoch!==selectionEpoch||apiSession!==selected)return;persist();const oldKey=key(),oldNoteKey=noteKey(),rangeDirty=dirtyKeys.has(oldKey),noteDirty=dirtyKeys.has(oldNoteKey);Object.assign(selected,fresh);if(rangeDirty)dirtyKeys.add(key());if(noteDirty)dirtyKeys.add(noteKey());if(rangeDirty||noteDirty)persist();hydrateNotes(selected);if(session()===selected)render();apiError=null;}}
- catch{if(epoch===selectionEpoch)$('source-note').textContent='后端读取失败，当前显示上次成功数据';}finally{refreshing=false;}
+ try{if(formal){const list=await loadSessions();sessionList=list.sessions;if(epoch===selectionEpoch)sessionOptions();if(!selected&&sessionList.length&&epoch===selectionEpoch){await switchSession(query.get('session')||list.defaultSession||sessionList[0].id);return;}}if(selected){const fresh=await (formal?loadSession(selected.sessionId):loadTestSession());if(epoch!==selectionEpoch||apiSession!==selected)return;persist();const oldKey=key(),oldNoteKey=noteKey(),rangeDirty=dirtyKeys.has(oldKey),noteDirty=dirtyKeys.has(oldNoteKey);Object.assign(selected,fresh);ingestObserver.observe(selected);if(rangeDirty)dirtyKeys.add(key());if(noteDirty)dirtyKeys.add(noteKey());if(rangeDirty||noteDirty)persist();hydrateNotes(selected);if(session()===selected)render();apiError=null;}}
+ catch{if(epoch===selectionEpoch){ingestObserver.fail(selected?.sessionId);$('source-note').textContent='后端读取失败，当前显示上次成功数据';renderCollectionStatus();}}finally{refreshing=false;}
 }
 setInterval(refreshSession,10000);
 $('audio-alert-close').onclick=()=>audioDialog.close();
+$('connection-open').onclick=()=>{
+ const s=session(),diagnosis=linkDiagnosis();audioDialogSession=s.sessionId||s.id;
+ audioDialogKey=JSON.stringify([audioDialogSession,diagnosis.code]);audioDialogKind=diagnosis.alert?'connection':'audio';
+ $('source-refresh-status').textContent='';audioDialog.showModal();renderCollectionStatus();
+};
 audioDialog.querySelector('form').onsubmit=async event=>{
  event.preventDefault();const s=session(),alertKey=audioDialogKey,button=$('audio-alert-refresh');
  if(!s.live){$('source-refresh-status').textContent='该场直播已结束，历史静音无法通过刷新恢复。';return;}
- button.disabled=true;$('source-refresh-status').textContent='正在请求刷新已绑定的直播源页面…';
+ const diagnosis=linkDiagnosis();if(!diagnosis.canRefresh){$('source-refresh-status').textContent=diagnosis.message;return;}
+ sourceRefreshBusy=true;button.disabled=true;$('source-refresh-status').textContent='正在请求刷新已绑定的直播源页面…';
  try{
   await requestSourceRefresh(s.teacher);
   if(audioDialogKey===alertKey)$('source-refresh-status').textContent='已请求刷新直播源。请确认源页面正在播放、音量已开启；是否恢复有声以新的音轨检测为准。';
  }catch(error){if(audioDialogKey===alertKey)$('source-refresh-status').textContent=error.message;}
- finally{if(audioDialogKey===alertKey)button.disabled=false;}
+ finally{sourceRefreshBusy=false;if(audioDialogKey===alertKey)button.disabled=!linkDiagnosis().canRefresh;}
 };
 
 // One real audio sample is available in the isolated combined test; no simulated video.
@@ -183,24 +192,56 @@ $('export-pdf').onclick=async()=>{
  finally{button.disabled=false;}
 };
 
+function linkDiagnosis(){
+ const s=session(),id=s.sessionId||s.id,now=performance.now();
+ const source=sourceEvidence?.id===id&&now-sourceEvidence.at<=30000?sourceEvidence:{state:'unknown'};
+ return connectionDiagnosis({source,ingest:ingestObserver.status(s),online:navigator.onLine,audioSilent:s.collectionStatus?.audioQuality?.state==='silent'});
+}
+function renderConnectionStatus(){
+ const s=session(),id=s.sessionId||s.id,now=performance.now(),diagnosis=linkDiagnosis();
+ const panel=$('connection-health');panel.hidden=(!s.live&&ingestObserver.status(s).state!=='stopped')||s.source!=='live-review';
+ if(!panel.hidden){
+  const source=sourceEvidence?.id===id&&now-sourceEvidence.at<=30000?sourceEvidence:{state:'unknown'};
+  const sourceLabels={playing:'播放进度在推进',observing:'正在观察播放进度',stalled:'播放进度停滞',paused:'已暂停',ended:'播放器播放结束',muted:'播放器或标签页静音',offline:'浏览器报告离线',error:'播放器报告错误',unknown:'待确认'};
+  const ingestLabels={receiving:'已观察到录像增长',observing:'正在观察录像增长',stale:'连续3分钟未增长',unknown:'录像信息无法核验','query-error':'最新状态无法查询',ended:'本场已结束',stopped:'本场收流已标记结束'};
+  $('connection-source').textContent='直播源：'+(sourceLabels[source.state]||'待确认')+(source.error?' · '+source.error:'');
+  $('connection-ingest').textContent='服务器录像：'+ingestLabels[ingestObserver.status(s).state];
+  $('connection-advice').textContent=diagnosis.message;
+  panel.dataset.warning=String(diagnosis.alert);
+  $('connection-open').hidden=!diagnosis.alert&&s.collectionStatus?.audioQuality?.state!=='silent';
+ }
+ return diagnosis;
+}
+async function refreshSourceHealth(){
+ const s=session();if(sourceChecking||!s.live||s.source!=='live-review')return;
+ sourceChecking=true;const epoch=selectionEpoch,id=s.sessionId||s.id;
+ try{
+  const health=await requestSourceHealth(s.teacher);
+  if(epoch===selectionEpoch&&session()===s)sourceEvidence={...health,id,at:performance.now()};
+ }catch(error){if(epoch===selectionEpoch&&session()===s)sourceEvidence={id,state:'unknown',error:error.message,at:performance.now()};}
+ finally{sourceChecking=false;if(epoch===selectionEpoch)renderCollectionStatus();}
+}
+
 function renderCollectionStatus(){
- const audioMessage=audioHealthMessage(session(),session().collectionStatus?.audioQuality);
- $('audio-health').hidden=!audioMessage;$('audio-health').textContent=audioMessage;
  const s=session(),report=s.collectionStatus?.audioQuality,id=s.sessionId||s.id;
- if(audioDialog.open&&(audioDialogSession!==id||['sound','recovered'].includes(report?.state)))audioDialog.close();
- const alert=audioAlerts.next(s,report);
- if(alert||(audioDialog.open&&audioDialogSession===id)){
-  $('audio-alert-title').textContent=s.live?'录音持续静音，请检查音源':'这场录像存在静音时段';
-  $('audio-alert-session').textContent=`${s.teacher} · ${s.date} · ${rangeLabel(s,0,s.duration)}`;
-  $('audio-alert-message').textContent=audioMessage;
-  $('audio-alert-refresh').hidden=!s.live;
-  $('audio-alert-hint').textContent=s.live?'可请求刷新 OBS 采集的直播源页面。需在推流电脑同一浏览器中绑定源页面；刷新不会触发数据上传，也不能保证声音恢复。':'这是历史录像的静音记录，刷新页面无法补回当时未录到的声音。';
- }
+ const audioMessage=audioHealthMessage(s,report),diagnosis=renderConnectionStatus();
+ $('audio-health').hidden=!audioMessage;$('audio-health').textContent=audioMessage;
+ if(audioDialog.open&&(audioDialogSession!==id||(audioDialogKind==='audio'&&['sound','recovered'].includes(report?.state))||(audioDialogKind==='connection'&&['healthy','ended'].includes(diagnosis.code))))audioDialog.close();
+ const linkAlert=(s.live||ingestObserver.status(s).state==='stopped')&&s.source==='live-review'?connectionAlerts.next(id,diagnosis):null;
+ const audioAlert=linkAlert||(audioDialog.open&&audioDialogKind==='connection')?null:audioAlerts.next(s,report),alert=linkAlert||audioAlert;
  if(alert){
-  audioDialogKey=alert.key;audioDialogSession=alert.sessionId;
-  $('audio-alert-refresh').disabled=false;$('source-refresh-status').textContent='';
-  if(!audioDialog.open)audioDialog.showModal();
+  audioDialogKey=alert.key;audioDialogSession=alert.sessionId;audioDialogKind=linkAlert?'connection':'audio';
+  $('source-refresh-status').textContent='';
  }
+ if(alert||(audioDialog.open&&audioDialogSession===id)){
+  $('audio-alert-title').textContent=audioDialogKind==='connection'?'直播链路需要检查':s.live?'录音持续静音，请检查音源':'这场录像存在静音时段';
+  $('audio-alert-session').textContent=`${s.teacher} · ${s.date} · ${rangeLabel(s,0,s.duration)}`;
+  $('audio-alert-message').textContent=audioDialogKind==='connection'?diagnosis.message:audioMessage;
+  $('audio-alert-refresh').hidden=!s.live||!diagnosis.canRefresh;
+  $('audio-alert-refresh').disabled=sourceRefreshBusy||!diagnosis.canRefresh;
+  $('audio-alert-hint').textContent=s.live?(audioDialogKind==='audio'?diagnosis.message+' ':'')+'本功能不停止或重启 OBS，不触发指标上传。源网页刷新可能短暂无声，恢复以新的音轨检测为准。':'这是历史录像的静音记录，刷新页面无法补回当时未录到的声音。';
+ }
+ if(alert&&!audioDialog.open)audioDialog.showModal();
  const panel=$('collection-status');panel.hidden=!formal;if(!formal)return;
  const status=session().collectionStatus;
  const readiness=status?.readiness;
@@ -218,3 +259,7 @@ async function refreshCollectionStatus(){
  }catch{$('collection-runs').textContent='采集状态查询失败，请稍后重试（不能据此判断采集是否正常）';}finally{statusLoading=false;}
 }
 refreshCollectionStatus();setInterval(refreshCollectionStatus,15000);
+
+refreshSourceHealth();setInterval(refreshSourceHealth,10000);
+window.addEventListener('online',()=>{refreshSession();refreshSourceHealth();});
+window.addEventListener('offline',renderCollectionStatus);

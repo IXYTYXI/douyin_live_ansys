@@ -18,7 +18,7 @@ async function finishRun(settings,reason){
  await chrome.storage.local.set({settings,finishes});return {settings,flushTail:true};
 }
 chrome.runtime.onMessage.addListener((message,sender,reply)=>{
- if(['SOURCE_BIND','SOURCE_STATUS','REFRESH_SOURCE'].includes(message?.type)){
+ if(['SOURCE_BIND','SOURCE_STATUS','REFRESH_SOURCE','SOURCE_HEALTH'].includes(message?.type)){
   const task=sourcePending.then(()=>sourceCommand(chrome,message,sender));sourcePending=task.catch(()=>{});
   task.then(reply,()=>reply({ok:false,error:'直播源操作失败，请重试'}));return true;
  }

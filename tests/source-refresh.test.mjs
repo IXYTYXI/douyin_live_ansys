@@ -1,6 +1,6 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 let callback,startup;let saved={},sent=[],active={id:5,url:'https://anchor.douyin.com/anchor/dashboard'},matches=true;
-globalThis.chrome={runtime:{id:'test',getURL:x=>'chrome-extension://test/'+x,onMessage:{addListener:f=>callback=f},onStartup:{addListener:f=>startup=f}},tabs:{query:async()=>[active],get:async id=>({...active,id}),sendMessage:async(id,m)=>{sent.push({id,...m});return {ok:true,matches};}},storage:{local:{get:async()=>structuredClone(saved),set:async data=>Object.assign(saved,structuredClone(data))}}};
+globalThis.chrome={runtime:{id:'test',getURL:x=>'chrome-extension://test/'+x,onMessage:{addListener:f=>callback=f},onStartup:{addListener:f=>startup=f}},tabs:{query:async()=>[active],get:async id=>({...active,id}),sendMessage:async(id,m)=>{sent.push({id,...m});return {ok:true,matches,health:{state:"playing",checkedAt:100,uploadToken:"DO_NOT_EXPOSE"}};}},storage:{local:{get:async()=>structuredClone(saved),set:async data=>Object.assign(saved,structuredClone(data))}}};
 globalThis.fetch=()=>{throw Error('Source refresh must not upload');};
 await import('../anchor-collector/background.mjs');
 const popup={id:'test',url:'chrome-extension://test/popup.html'},review={id:'test',url:'https://live-ansys.ai.lab.yc345.tv/?session=live-a',frameId:0,tab:{id:9}};
@@ -30,4 +30,15 @@ test('missing, navigated or mismatched source refuses refresh; browser restart i
  active.url='https://anchor.douyin.com/anchor/dashboard';await startup();
  assert.equal((await call({type:'REFRESH_SOURCE',teacher:'老师'},review)).ok,false);
  assert.equal(sent.filter(x=>x.type==='SOURCE_RELOAD').length,0);
+});
+
+
+test('review health queries are bound, sanitized and do not refresh or upload',async()=>{
+ reset();await call({type:'SOURCE_BIND',teacher:'老师'});const before=structuredClone(saved);
+ const result=await call({type:'SOURCE_HEALTH',teacher:'老师'},review);
+ assert.equal(result.ok,true);assert.deepEqual(result.health,{state:'playing',checkedAt:100});
+ assert.deepEqual(saved,before);assert.equal(sent.at(-1).type,'SOURCE_HEALTH');assert.equal(sent.some(m=>m.type==='SOURCE_RELOAD'),false);
+ assert.equal((await call({type:'SOURCE_HEALTH',teacher:'wrong'},review)).ok,false);
+ assert.equal((await call({type:'SOURCE_HEALTH',teacher:'老师'},{...review,url:'https://evil.example'})).ok,false);
+ matches=false;assert.equal((await call({type:'SOURCE_HEALTH',teacher:'老师'},review)).ok,false);
 });

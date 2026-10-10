@@ -15,3 +15,10 @@ test('missing plugin and rejected source are reported without pretending sound r
  const pending=audio.requestSourceRefresh('老师',{targetWindow:win,timeoutMs:100});const {message}=win.sent.at(-1);
  win.reply({...message,type:'SOURCE_RESULT',ok:false,error:'主播不匹配'});await assert.rejects(pending,/主播不匹配/);assert.equal(win.listeners.size,0);
 });
+
+test('read-only source health is correlated, sanitized and times out without refresh',async()=>{
+ assert.equal(typeof audio.requestSourceHealth,'function');const win=page();
+ const pending=audio.requestSourceHealth('老师',{targetWindow:win,timeoutMs:100});const {message}=win.sent[0];assert.equal(message.type,'SOURCE_HEALTH');
+ win.reply({...message,type:'SOURCE_RESULT',ok:true,health:{state:'playing',secret:'not-forwarded'}});assert.deepEqual(await pending,{state:'playing'});assert.equal(win.listeners.size,0);
+ await assert.rejects(audio.requestSourceHealth('老师',{targetWindow:win,timeoutMs:5}),/无法读取/);
+});

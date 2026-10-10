@@ -6,7 +6,7 @@ function reviewPage(sender){try{const u=new URL(sender.url);return sender.frameI
 export async function sourceCommand(chrome,message,sender){
  const own=sender.id===chrome.runtime.id,popup=own&&sender.url===chrome.runtime.getURL('popup.html');
  const fail=error=>({ok:false,error});
- if(!popup&&!(own&&reviewPage(sender)&&message.type==='REFRESH_SOURCE'))return fail('不允许的来源');
+ if(!popup&&!(own&&reviewPage(sender)&&['REFRESH_SOURCE','SOURCE_HEALTH'].includes(message.type)))return fail('不允许的来源');
  try{
   const {sourceBinding}=await chrome.storage.local.get('sourceBinding');
   if(message.type==='SOURCE_STATUS')return {ok:true,bound:Boolean(sourceBinding),teacher:sourceBinding?.teacher||''};
@@ -24,6 +24,13 @@ export async function sourceCommand(chrome,message,sender){
   if(sourceBinding.teacher!==teacher)return fail('已绑定主播与当前复盘场次不一致，未刷新任何页面');
   const tab=await chrome.tabs.get(sourceBinding.tabId);
   if(!dashboard(tab.url)||tab.pendingUrl)return fail('绑定页面已跳转或正在加载，请回到直播大屏重新绑定');
+  if(message.type==='SOURCE_HEALTH'){
+   const result=await chrome.tabs.sendMessage(tab.id,{type:'SOURCE_HEALTH',teacher},{frameId:0});
+   if(!result?.ok||!result.matches)return fail('无法确认直播源主播身份，请检查源页面');
+   const states=['playing','observing','stalled','paused','muted','offline','error','ended','unknown'];
+   const state=states.includes(result.health?.state)?result.health.state:'unknown';
+   return {ok:true,health:{state:tab.mutedInfo?.muted&&state!=='offline'?'muted':state,checkedAt:Number.isFinite(result.health?.checkedAt)?result.health.checkedAt:Date.now()}};
+  }
   if(sourceBinding.lastReloadAt!=null&&Date.now()-sourceBinding.lastReloadAt<30000)return fail('刚刚已请求刷新，请等待30秒并检查直播源声音');
   const check=await chrome.tabs.sendMessage(tab.id,{type:'SOURCE_IDENTIFY',teacher},{frameId:0});
   if(!check?.ok||!check.matches)return fail('无法确认直播源主播身份，请在源页面检查登录和昵称');
